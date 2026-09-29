@@ -1,0 +1,11 @@
+---
+// Dueño: Persona B. Confirmación de pedido (reemplaza el aviso
+// "confirmacion-box" que hoy vive en front/src/App.jsx).
+import Layout from "../../layouts/Layout.astro";
+const { id } = Astro.params;
+---
+
+<Layout title="Pedido">
+  <h2>Pedido #{id}</h2>
+  <p class="muted">En construcción · Persona B</p>
+</Layout>

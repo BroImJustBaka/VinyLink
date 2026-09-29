@@ -1,0 +1,27 @@
+---
+// Dueño: Persona A.
+// Los dos huecos de la derecha NO son de A: CartBadge es de B y UserMenu de C.
+// TODO(A): decidir cómo funciona la búsqueda en multipágina (hoy manda ?q=).
+import CartBadge from "../carrito/CartBadge.jsx";
+import UserMenu from "../auth/UserMenu.astro";
+
+const q = Astro.url.searchParams.get("q") ?? "";
+---
+
+<header class="topbar">
+  <a class="topbar__logo" href="/">VinyLink</a>
+
+  <form role="search" method="get" style="flex: 1; max-width: 420px; display: flex;">
+    <input
+      type="search"
+      name="q"
+      class="topbar__buscador"
+      placeholder="Buscar productos..."
+      value={q}
+      style="max-width: none;"
+    />
+  </form>
+
+  <CartBadge client:only="react" />
+  <UserMenu />
+</header>

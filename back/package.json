@@ -1,0 +1,18 @@
+{
+  "name": "p26-back",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node --watch src/index.js"
+  },
+  "description": "Backend GraphQL (Apollo Server) del e-commerce - Practica P2-6",
+  "dependencies": {
+    "@apollo/server": "^5.0.0",
+    "dotenv": "^16.4.5",
+    "graphql": "^16.9.0",
+    "pg": "^8.13.1"
+  }
+}

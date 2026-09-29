@@ -1,0 +1,16 @@
+---
+// Dueño: Persona C. Hueco del TopBar: sesión del usuario.
+const user = Astro.locals.user;
+---
+
+{
+  user ? (
+    <a class="topbar__perfil" href="/perfil">
+      👤 {user.nombre.split(" ")[0]}
+    </a>
+  ) : (
+    <a class="topbar__perfil" href="/login">
+      Iniciar sesión
+    </a>
+  )
+}

@@ -1,0 +1,19 @@
+---
+// Dueño: Persona A. Migrar desde front/src/views/HomeView.jsx
+// (Hero, CategoryCard, ContextSection) y front/src/components/Sidebar.jsx.
+import Layout from "../layouts/Layout.astro";
+import { graphqlServer } from "../lib/graphql";
+import { QUERY_CATEGORIAS } from "../lib/queries/catalogo.js";
+
+const { categorias } = await graphqlServer(Astro.cookies, QUERY_CATEGORIAS);
+---
+
+<Layout>
+  <h2>Categorías</h2>
+  <p class="muted">Página temporal (Fase 0): confirma que Astro, backend y Neon están conectados.</p>
+  <ul>
+    {categorias.map((cat: { id: string; nombre: string }) => (
+      <li><a href={`/categoria/${cat.id}`}>{cat.nombre}</a></li>
+    ))}
+  </ul>
+</Layout>
