@@ -1,0 +1,11 @@
+---
+// Dueño: Persona A. Migrar desde front/src/views/CategoryView.jsx
+// (ProductCard, ProductModal como isla que usa stores/cart.js, búsqueda con ?q=).
+import Layout from "../../layouts/Layout.astro";
+const { id } = Astro.params;
+---
+
+<Layout title="Categoría">
+  <h2>Categoría {id}</h2>
+  <p class="muted">En construcción · Persona A</p>
+</Layout>

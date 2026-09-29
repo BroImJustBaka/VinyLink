@@ -1,0 +1,11 @@
+node_modules/
+dist/
+.astro/
+.env
+.env.*
+!.env.example
+*.log
+.DS_Store
+
+# Base SQLite vieja (ya no se usa, el proyecto corre en PostgreSQL)
+back/ecommerce.db*
