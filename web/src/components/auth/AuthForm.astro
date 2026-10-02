@@ -1,0 +1,71 @@
+---
+// Dueño: Persona C. Migración de front/src/components/AuthForm.jsx a Astro:
+// formulario HTML con POST (sin JS). Lo usan /login y /registro.
+interface Props {
+  modo: "login" | "registro";
+  error?: string | null;
+  next?: string;
+  nombre?: string;
+  email?: string;
+}
+
+const { modo, error = null, next = "", nombre = "", email = "" } = Astro.props;
+const query = next ? `?next=${encodeURIComponent(next)}` : "";
+---
+
+<section class="auth-form">
+  <div class="auth-form__tabs">
+    <a
+      class={`btn ${modo === "login" ? "btn--primario" : "btn--link"}`}
+      href={`/login${query}`}
+      aria-current={modo === "login" ? "page" : undefined}
+    >
+      Iniciar sesión
+    </a>
+    <a
+      class={`btn ${modo === "registro" ? "btn--primario" : "btn--link"}`}
+      href={`/registro${query}`}
+      aria-current={modo === "registro" ? "page" : undefined}
+    >
+      Crear cuenta
+    </a>
+  </div>
+
+  <form method="POST" action={`/${modo}${query}`} class="checkout-form">
+    {
+      modo === "registro" && (
+        <label>
+          Nombre
+          <input type="text" name="nombre" required value={nombre} autocomplete="name" />
+        </label>
+      )
+    }
+
+    <label>
+      Email
+      <input type="email" name="email" required value={email} autocomplete="email" />
+    </label>
+
+    <label>
+      Contraseña
+      <input
+        type="password"
+        name="password"
+        required
+        autocomplete={modo === "login" ? "current-password" : "new-password"}
+      />
+    </label>
+
+    {
+      error && (
+        <div class="error-box">
+          <p>{error}</p>
+        </div>
+      )
+    }
+
+    <button class="btn btn--primario" type="submit">
+      {modo === "login" ? "Entrar" : "Registrarme"}
+    </button>
+  </form>
+</section>

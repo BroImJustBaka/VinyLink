@@ -21,3 +21,19 @@ export const MUTATION_REGISTRAR = `
     }
   }
 `;
+export const QUERY_ME = `
+  query Me {
+    me {
+      id
+      nombre
+      email
+      rol
+    }
+  }
+`;
+
+export const MUTATION_LOGOUT = `
+  mutation Logout {
+    logout
+  }
+`;
