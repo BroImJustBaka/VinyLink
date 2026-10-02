@@ -1,9 +1,40 @@
 ---
-// Dueño: Persona C. Migrar desde front/src/components/AuthForm.jsx (modo registro).
+// Dueño: Persona C. Igual que /login pero con la mutation `registrar`.
 import Layout from "../layouts/Layout.astro";
+import AuthForm from "../components/auth/AuthForm.astro";
+import { graphqlServer } from "../lib/graphql";
+import { MUTATION_REGISTRAR } from "../lib/queries/auth.js";
+import { guardarSesion, destinoSeguro } from "../components/auth/session";
+
+const next = destinoSeguro(Astro.url.searchParams.get("next"), "");
+const destino = next || "/perfil";
+
+if (Astro.locals.user) return Astro.redirect(destino);
+
+let error: string | null = null;
+let nombre = "";
+let email = "";
+
+if (Astro.request.method === "POST") {
+  const form = await Astro.request.formData();
+  nombre = String(form.get("nombre") ?? "").trim();
+  email = String(form.get("email") ?? "").trim();
+  const password = String(form.get("password") ?? "");
+
+  try {
+    const { registrar } = await graphqlServer(Astro.cookies, MUTATION_REGISTRAR, {
+      nombre,
+      email,
+      password,
+    });
+    guardarSesion(Astro.cookies, registrar.token);
+    return Astro.redirect(destino, 303);
+  } catch (err) {
+    error = err instanceof Error ? err.message : "No se pudo crear la cuenta";
+  }
+}
 ---
 
 <Layout title="Crear cuenta">
-  <h2>Crear cuenta</h2>
-  <p class="muted">En construcción · Persona C</p>
+  <AuthForm modo="registro" error={error} next={next} nombre={nombre} email={email} />
 </Layout>

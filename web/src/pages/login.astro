@@ -1,9 +1,36 @@
 ---
-// Dueño: Persona C. Migrar desde front/src/components/AuthForm.jsx (modo login).
+// Dueño: Persona C. Formulario con POST (sin JS): al tener éxito guarda la
+// cookie `sid` y redirige a ?next= (o /perfil).
 import Layout from "../layouts/Layout.astro";
+import AuthForm from "../components/auth/AuthForm.astro";
+import { graphqlServer } from "../lib/graphql";
+import { MUTATION_LOGIN } from "../lib/queries/auth.js";
+import { guardarSesion, destinoSeguro } from "../components/auth/session";
+
+const next = destinoSeguro(Astro.url.searchParams.get("next"), "");
+const destino = next || "/perfil";
+
+// Ya tiene sesión: no tiene sentido mostrar el login.
+if (Astro.locals.user) return Astro.redirect(destino);
+
+let error: string | null = null;
+let email = "";
+
+if (Astro.request.method === "POST") {
+  const form = await Astro.request.formData();
+  email = String(form.get("email") ?? "").trim();
+  const password = String(form.get("password") ?? "");
+
+  try {
+    const { login } = await graphqlServer(Astro.cookies, MUTATION_LOGIN, { email, password });
+    guardarSesion(Astro.cookies, login.token);
+    return Astro.redirect(destino, 303);
+  } catch (err) {
+    error = err instanceof Error ? err.message : "No se pudo iniciar sesión";
+  }
+}
 ---
 
 <Layout title="Iniciar sesión">
-  <h2>Iniciar sesión</h2>
-  <p class="muted">En construcción · Persona C</p>
+  <AuthForm modo="login" error={error} next={next} email={email} />
 </Layout>
