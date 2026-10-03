@@ -1,10 +1,10 @@
 ---
-// Dueño: Persona B. Migrar desde front/src/views/CartView.jsx como isla React
-// que usa stores/cart.js.
+// Dueño: Persona B. Migrado desde front/src/views/CartView.jsx.
+// Isla React solo en el navegador: el carrito vive en localStorage.
 import Layout from "../layouts/Layout.astro";
+import CartView from "../components/carrito/CartView.jsx";
 ---
 
 <Layout title="Carrito">
-  <h2>Carrito</h2>
-  <p class="muted">En construcción · Persona B</p>
+  <CartView client:only="react" />
 </Layout>

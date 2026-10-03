@@ -1,10 +1,14 @@
 ---
-// Dueño: Persona B. Migrar desde front/src/views/CheckoutView.jsx.
+// Dueño: Persona B. Migrado desde front/src/views/CheckoutView.jsx.
 // Requiere sesión: el middleware de C redirige a /login si no hay usuario.
+// Si aun así llega sin sesión, el backend rechaza el pedido y la isla muestra
+// el enlace a /login.
 import Layout from "../layouts/Layout.astro";
+import CheckoutForm from "../components/carrito/CheckoutForm.jsx";
+
+const user = Astro.locals.user;
 ---
 
 <Layout title="Checkout">
-  <h2>Checkout</h2>
-  <p class="muted">En construcción · Persona B</p>
+  <CheckoutForm client:only="react" user={user} />
 </Layout>
