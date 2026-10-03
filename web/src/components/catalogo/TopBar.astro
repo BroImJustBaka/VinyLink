@@ -1,24 +1,30 @@
 ---
 // Dueño: Persona A.
 // Los dos huecos de la derecha NO son de A: CartBadge es de B y UserMenu de C.
-// TODO(A): decidir cómo funciona la búsqueda en multipágina (hoy manda ?q=).
+//
+// Búsqueda (?q=): dentro de /categoria/[id] filtra esa categoría (el form se
+// manda a la misma página); en cualquier otra página va a /buscar, que busca
+// en toda la tienda.
 import CartBadge from "../carrito/CartBadge.jsx";
 import UserMenu from "../auth/UserMenu.astro";
 
 const q = Astro.url.searchParams.get("q") ?? "";
+const enCategoria = /^\/categoria\/[^/]+\/?$/.test(Astro.url.pathname);
+const accion = enCategoria ? Astro.url.pathname : "/buscar";
+const placeholder = enCategoria ? "Buscar en esta categoría..." : "Buscar productos...";
 ---
 
 <header class="topbar">
   <a class="topbar__logo" href="/">VinyLink</a>
 
-  <form role="search" method="get" style="flex: 1; max-width: 420px; display: flex;">
+  <form role="search" method="get" action={accion} class="topbar__busqueda">
     <input
       type="search"
       name="q"
       class="topbar__buscador"
-      placeholder="Buscar productos..."
+      placeholder={placeholder}
+      aria-label={placeholder}
       value={q}
-      style="max-width: none;"
     />
   </form>
 

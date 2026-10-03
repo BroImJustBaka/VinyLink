@@ -1,9 +1,19 @@
 ---
-// Dueño: Persona A.
+// Dueño: Persona A. También se muestra cuando /categoria/[id] no existe
+// (la página hace Astro.rewrite("/404")).
 import Layout from "../layouts/Layout.astro";
+import Sidebar from "../components/catalogo/Sidebar.astro";
 ---
 
 <Layout title="No encontrado">
-  <h2>Página no encontrada</h2>
-  <a class="btn btn--link" href="/">Volver al inicio</a>
+  <Fragment slot="sidebar"><Sidebar /></Fragment>
+
+  <section class="no-encontrado">
+    <p class="no-encontrado__codigo">404</p>
+    <h2>Página no encontrada</h2>
+    <p class="muted">
+      Este disco no está en nuestra colección. Revisa la dirección o vuelve a la tienda.
+    </p>
+    <a class="btn btn--primario" href="/">Volver al inicio</a>
+  </section>
 </Layout>

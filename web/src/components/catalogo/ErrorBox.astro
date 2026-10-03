@@ -1,0 +1,14 @@
+---
+// Dueño: Persona A. Aviso cuando el backend no responde. "Reintentar" ya no
+// vuelve a disparar un fetch en el navegador: recarga la página.
+interface Props {
+  mensaje: string;
+}
+
+const { mensaje } = Astro.props;
+---
+
+<div class="error-box" role="alert">
+  <p>{mensaje}</p>
+  <a class="btn" href={Astro.url.pathname + Astro.url.search}>Reintentar</a>
+</div>
