@@ -7,6 +7,7 @@ export const MUTATION_LOGIN = `
       nombre
       email
       rol
+      token
     }
   }
 `;
@@ -18,6 +19,7 @@ export const MUTATION_REGISTRAR = `
       nombre
       email
       rol
+      token
     }
   }
 `;

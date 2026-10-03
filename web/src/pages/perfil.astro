@@ -2,16 +2,38 @@
 // Dueño: Persona C. Migración de front/src/views/PerfilView.jsx.
 // El middleware ya redirige a /login si no hay sesión, así que aquí
 // Astro.locals.user existe. No necesita ser una isla React ni usar stores.
-// Fase 2: aquí se mostrará misPedidos (B).
+// Muestra el historial de pedidos que expone B (misPedidos).
 import Layout from "../layouts/Layout.astro";
+import { graphqlServer } from "../lib/graphql";
+import { QUERY_MIS_PEDIDOS } from "../lib/queries/pedidos.js";
+
+type Pedido = {
+  id: string;
+  fecha: string;
+  estado: string;
+  total: number;
+  detalles: { cantidad: number }[];
+};
 
 const usuario = Astro.locals.user!;
+
+let pedidos: Pedido[] = [];
+let error: string | null = null;
+try {
+  ({ misPedidos: pedidos } = await graphqlServer(Astro.cookies, QUERY_MIS_PEDIDOS));
+} catch (err) {
+  error = err instanceof Error ? err.message : "No se pudo cargar el historial";
+}
+
+const formatoFecha = (iso: string) =>
+  new Date(iso).toLocaleDateString("es-MX", { dateStyle: "medium" });
+const piezas = (p: Pedido) => p.detalles.reduce((acc, d) => acc + d.cantidad, 0);
 ---
 
 <Layout title="Perfil">
   <section class="perfil-view">
     <h2>Bienvenido, {usuario.nombre}</h2>
-    <p>{usuario.email}</p>
+    <p class="muted">{usuario.email}{usuario.rol === "ADMIN" && " · Administrador"}</p>
 
     <div class="perfil-view__acciones">
       <a class="btn btn--primario" href="/carrito">🛒 Ir al carrito</a>
@@ -20,5 +42,34 @@ const usuario = Astro.locals.user!;
         <button class="btn btn--link" type="submit">Cerrar sesión</button>
       </form>
     </div>
+
+    <h3 class="perfil-view__subtitulo">Mis pedidos</h3>
+
+    {
+      error ? (
+        <div class="error-box">
+          <p>No se pudo cargar tu historial: {error}</p>
+        </div>
+      ) : pedidos.length === 0 ? (
+        <p class="muted">
+          Todavía no has hecho ningún pedido. <a href="/">Explora el catálogo</a>
+        </p>
+      ) : (
+        <ul class="pedidos-lista">
+          {pedidos.map((p) => (
+            <li>
+              <a class="pedido-fila" href={`/pedido/${p.id}`}>
+                <strong>Pedido #{p.id}</strong>
+                <span class="muted">{formatoFecha(p.fecha)}</span>
+                <span class="muted">
+                  {piezas(p)} {piezas(p) === 1 ? "pieza" : "piezas"} · {p.estado}
+                </span>
+                <span class="precio">${p.total.toFixed(2)}</span>
+              </a>
+            </li>
+          ))}
+        </ul>
+      )
+    }
   </section>
 </Layout>

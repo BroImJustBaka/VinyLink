@@ -1,4 +1,4 @@
-# Backend — API GraphQL del e-commerce
+# Backend — API GraphQL de VinyLink
 
 Servidor **Apollo Server** (Node.js) que expone un único endpoint GraphQL y se
 conecta a una **base de datos PostgreSQL** (hospedada en [Neon](https://neon.tech)),
@@ -10,7 +10,7 @@ duplica datos si ya existen).
 
 | Herramienta | Versión probada |
 |---|---|
-| Node.js | v24.15.0 (funciona desde Node 18+) |
+| Node.js | v24.15.0 (funciona desde Node 20+) |
 | npm | 11.12.1 |
 | PostgreSQL | proyecto en Neon (o cualquier Postgres accesible) |
 
@@ -65,9 +65,9 @@ back/
 │   ├── schema.js         # junta los typeDefs y resolvers de los módulos
 │   ├── lib/sql.js        # helpers one/many y mapeos snake_case → camelCase
 │   └── modules/
-│       ├── catalogo/     # categorías y productos (Persona A)
-│       ├── pedidos/      # carrito y pedidos (Persona B)
-│       └── auth/         # usuarios, login, context.user (Persona C)
+│       ├── catalogo/     # categorías, productos y búsqueda
+│       ├── pedidos/      # carrito y pedidos
+│       └── auth/         # usuarios, sesiones, login, context.user
 ├── .env                  # DATABASE_URL (no se versiona)
 └── package.json
 ```
@@ -76,20 +76,44 @@ Cada módulo tiene `typeDefs.js` (usa `extend type Query/Mutation`) y
 `resolvers.js`. Si dos módulos definen el mismo resolver, el servidor no
 arranca y te dice cuál está duplicado.
 
+## Autenticación
+
+- `login` y `registrar` regresan el usuario con un `token` de sesión. La
+  contraseña se guarda con **bcrypt** y la sesión en la tabla `sesion`
+  (solo el SHA-256 del token, expira en 7 días).
+- El cliente manda el token en el header `Authorization: Bearer <token>`.
+- `src/modules/auth/context.js` convierte el token en `context.user`
+  (`{ id, nombre, email, rol } | null`) y expone `requireUser(context)` y
+  `requireAdmin(context)` para los resolvers.
+- Atajo de desarrollo: `AUTH_USUARIO_FALSO=<id>` en `.env` hace que todas las
+  peticiones sean de ese usuario. No lo uses en producción.
+
 ## Operaciones principales
 
 **Lecturas**
-- `categorias` — todas las categorías con sus productos anidados.
-- `categoria(id)` — una categoría por id.
+- `categorias`, `categoria(id)` — categorías con sus productos anidados.
 - `productos(limit, offset, categoriaId)` — catálogo paginado.
 - `producto(id)` — un producto por id.
-- `pedidos` / `pedido(id)` — historial de pedidos.
+- `buscarProductos(texto, categoriaId)` — busca en nombre y descripción (sin distinguir mayúsculas).
+- `me` — usuario de la sesión actual.
+- `carrito` — carrito del usuario con sesión (se crea vacío si no existe).
+- `misPedidos` — historial del usuario con sesión.
+- `pedido(id)` — un pedido propio (o cualquiera si eres ADMIN).
+- `pedidos` — todos los pedidos (solo ADMIN).
 
 **Escrituras**
-- `crearProducto(data)`, `actualizarProducto(id, data)`, `eliminarProducto(id)`.
-- `crearPedido(data)` — recibe comprador (`nombre`, `email`) y `items`
-  (`productoId` + `cantidad`); valida stock, calcula el total en el servidor
-  y descuenta el stock de cada producto dentro de una transacción.
+- `login`, `registrar`, `logout`.
+- `agregarAlCarrito`, `cambiarCantidadCarrito`, `quitarDelCarrito`,
+  `vaciarCarritoDB`, `fusionarCarrito` — siempre sobre el carrito del usuario
+  con sesión; validan el stock.
+- `crearPedido(data)` — recibe los `items` (`productoId` + `cantidad`); el
+  comprador es el usuario con sesión. Valida stock, calcula el total en el
+  servidor, descuenta stock y vacía el carrito guardado, todo en una transacción.
+- `crearProducto`, `actualizarProducto`, `eliminarProducto` — solo ADMIN.
 
-Ver [`../reporte-p6.md`](../reporte-p6.md) para el DER, el detalle del schema
-y las pruebas realizadas.
+## Usuarios de prueba
+
+| Email | Contraseña | Rol |
+|---|---|---|
+| `invitado@tienda.com` | `invitado123` | CLIENTE |
+| `admin@tienda.com` | `admin123` | ADMIN |

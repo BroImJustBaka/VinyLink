@@ -12,18 +12,21 @@ export const typeDefs = `#graphql
     nombre: String!
     email: String!
     rol: Rol!
+    "Token de sesión. Solo viene en la respuesta de login y registrar."
     token: String
   }
-    extend type Query {  
-me: Usuario
-    }
 
+  extend type Query {
+    "Usuario de la sesión actual (null si no hay sesión)."
+    me: Usuario
+  }
 
   extend type Mutation {
-    "Valida email+password contra la tabla usuario y regresa el usuario si coinciden."
+    "Valida email+password (bcrypt), crea una sesión y regresa el usuario con su token."
     login(email: String!, password: String!): Usuario!
-    "Crea un usuario nuevo (rol CLIENTE) y lo regresa."
+    "Crea un usuario nuevo (rol CLIENTE), inicia su sesión y lo regresa con su token."
     registrar(nombre: String!, email: String!, password: String!): Usuario!
-    logout: Boolean! 
+    "Cierra la sesión actual (borra el token en la base de datos)."
+    logout: Boolean!
   }
 `;

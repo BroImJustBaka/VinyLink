@@ -1,84 +1,142 @@
-# VinyLink: migración a Astro + auth
+# VinyLink
 
-Tienda de discos e instrumentos. Estamos migrando el frontend de React/Vite
-(`front/`) a Astro (`web/`) y agregando un sistema de autenticación real.
-Trabajamos 3 personas en paralelo; cada quien es dueño de sus carpetas.
+Tienda en línea de discos, audífonos e instrumentos musicales. El cliente
+explora el catálogo por categorías, busca productos, arma su carrito, crea una
+cuenta y confirma su pedido; después puede consultar su historial desde su perfil.
+
+- **Frontend:** [Astro](https://astro.build) con renderizado en servidor e islas de React.
+- **Backend:** API GraphQL con Apollo Server.
+- **Base de datos:** PostgreSQL (hospedada en [Neon](https://neon.tech)).
+
+## Funcionalidades
+
+| Área | Qué hace |
+|---|---|
+| **Catálogo** | Home con categorías, página por categoría con numeración estilo vinilo (A1, A2… B1…), detalle de producto en un modal y búsqueda por nombre o descripción. |
+| **Carrito** | Funciona sin cuenta (se guarda en el navegador). Con sesión se sincroniza con la base de datos y, al iniciar sesión, el carrito de invitado se fusiona con el guardado. |
+| **Pedidos** | Checkout con validación de stock en una transacción; página de confirmación `/pedido/[id]`; historial en `/perfil`. |
+| **Cuentas** | Registro e inicio de sesión con contraseñas hasheadas (bcrypt), sesiones en base de datos y cookie `httpOnly`. Roles `CLIENTE` y `ADMIN`. |
+
+## Rutas
+
+| Ruta | Descripción | Sesión |
+|---|---|---|
+| `/` | Home: hero, categorías y vista rápida del carrito | — |
+| `/categoria/[id]` | Productos de una categoría. `?q=` filtra dentro de ella | — |
+| `/buscar?q=` | Búsqueda en toda la tienda | — |
+| `/carrito` | Carrito editable | — |
+| `/checkout` | Confirmar la compra | Requerida |
+| `/pedido/[id]` | Confirmación y detalle de un pedido propio | Requerida |
+| `/login`, `/registro` | Formularios de acceso (funcionan sin JavaScript) | — |
+| `/perfil` | Datos del usuario, historial de pedidos y cerrar sesión | Requerida |
+| `/logout` | Cierra la sesión (solo `POST`) | — |
+
+Si una ruta protegida se abre sin sesión, se redirige a `/login?next=<ruta>` y,
+al entrar, se regresa a donde estaba.
 
 ## Estructura
 
 ```
-back/                 API GraphQL (Apollo + PostgreSQL en Neon)
-  src/modules/
-    catalogo/         Persona A
-    pedidos/          Persona B
-    auth/             Persona C
-web/                  Frontend nuevo (Astro + islas React)   ← aquí se migra
-front/                Frontend viejo: solo de REFERENCIA, se borra al final
-db.sql                Esquema y datos semilla (PostgreSQL)
-docs/equipo/          Guía de cada persona
+back/                     API GraphQL (Apollo Server + pg)
+  src/
+    index.js              arranca el servidor y arma context.user
+    db.js                 pool de PostgreSQL; aplica db.sql al arrancar
+    schema.js             junta typeDefs y resolvers de los módulos
+    modules/
+      catalogo/           categorías, productos y búsqueda
+      pedidos/            carrito en DB, pedidos e historial
+      auth/               usuarios, sesiones, login/registro, requireUser/requireAdmin
+web/                      Frontend Astro (SSR con @astrojs/node)
+  src/
+    pages/                rutas (ver tabla de arriba) + api/graphql.ts (proxy)
+    layouts/Layout.astro  estructura común: TopBar, sidebar opcional y Footer
+    components/
+      catalogo/           TopBar, Sidebar, Hero, ProductCard, ProductModal (isla)…
+      carrito/            CartBadge, CartView y CheckoutForm (islas)
+      auth/               UserMenu, AuthForm
+    stores/cart.js        store de Zustand del carrito
+    lib/graphql.ts        graphqlServer() y graphqlClient()
+    middleware.ts         llena Astro.locals.user y protege rutas
+    styles/               estilos globales y de la app
+db.sql                    esquema y datos semilla (idempotente)
 ```
 
-## Reparto
+## Cómo funciona
 
-| | Persona A: Base y catálogo | Persona B: Carrito y pedidos | Persona C: Auth y perfil |
-|---|---|---|---|
-| **Rutas** | `/`, `/categoria/[id]`, `404` | `/carrito`, `/checkout`, `/pedido/[id]` | `/login`, `/registro`, `/perfil`, `/logout` |
-| **Guía** | [persona-a.md](docs/equipo/persona-a.md) | [persona-b.md](docs/equipo/persona-b.md) | [persona-c.md](docs/equipo/persona-c.md) |
-
-### Qué archivos son de quién
-
-| Dueño | Archivos |
-|---|---|
-| **A** | `web/src/pages/index.astro`, `web/src/pages/categoria/`, `web/src/pages/404.astro`, `web/src/components/catalogo/`, `web/src/styles/`, `web/src/lib/queries/catalogo.js`, `back/src/modules/catalogo/` |
-| **B** | `web/src/pages/carrito.astro`, `web/src/pages/checkout.astro`, `web/src/pages/pedido/`, `web/src/components/carrito/`, `web/src/stores/cart.js`, `web/src/lib/queries/pedidos.js`, `back/src/modules/pedidos/` |
-| **C** | `web/src/pages/login.astro`, `web/src/pages/registro.astro`, `web/src/pages/perfil.astro`, `web/src/pages/logout.ts`, `web/src/pages/api/`, `web/src/middleware.ts`, `web/src/env.d.ts`, `web/src/components/auth/`, `web/src/lib/queries/auth.js`, `back/src/modules/auth/`, `db.sql` |
-| **Compartidos** (PR pequeño, lo revisa A) | `web/src/layouts/Layout.astro`, `web/astro.config.mjs`, `web/package.json`, `web/src/lib/graphql.ts`, `back/src/schema.js`, `back/src/index.js`, `back/package.json` |
-
-**Regla de oro:** solo editas tus archivos. Si necesitas algo de otra persona,
-se lo pides (issue o mensaje) o lo propones en un PR que esa persona revisa.
-
-## Contratos (no cambiarlos sin avisar a los otros dos)
-
-1. **Usuario en el frontend:** `Astro.locals.user` es `{ id, nombre, email, rol } | null`.
-   Lo llena `web/src/middleware.ts` (C).
-2. **Usuario en el backend:** cada resolver recibe `context.user` con la misma forma.
-   Usa `requireUser(context)` / `requireAdmin(context)` de `back/src/modules/auth/context.js` (C).
-3. **Sesión:** cookie httpOnly `sid`. El frontend la manda al backend como
-   `Authorization: Bearer <sid>`. `web/src/lib/graphql.ts` ya lo hace:
-   - `graphqlServer(Astro.cookies, QUERY, vars)` en páginas `.astro`.
-   - `graphqlClient(QUERY, vars)` en islas React (pasa por `/api/graphql`).
-4. **Carrito:** `useCartStore` de `web/src/stores/cart.js` (B) expone
-   `items`, `agregarProducto(producto, cantidad)`, `cambiarCantidad(id, cantidad)`,
-   `quitarProducto(id)`, `vaciarCarrito()`, `total()`, `cantidadTotal()`.
-5. **TopBar:** es de A, pero sus dos huecos no: `<CartBadge />` es de B y `<UserMenu />` de C.
+- **Datos en el servidor.** Las páginas `.astro` piden sus datos con
+  `graphqlServer(Astro.cookies, QUERY, vars)` y llegan al navegador ya
+  renderizadas, sin pantallas de carga.
+- **Islas React** solo donde hace falta interacción: `ProductModal`
+  (`client:load`), y `CartBadge`, `CartView`, `CheckoutForm` y la vista rápida
+  del carrito (`client:only`, porque el carrito vive en `localStorage`). Todas
+  comparten el mismo store `useCartStore`.
+- **Sesión.** `login`/`registrar` regresan un token aleatorio; el backend guarda
+  solo su SHA-256 en la tabla `sesion` (expira en 7 días). El frontend lo guarda
+  en la cookie `sid` (`httpOnly`, `sameSite=lax`, `secure` en producción) y lo
+  reenvía como `Authorization: Bearer <sid>`. Las islas llaman a `/api/graphql`,
+  que agrega la sesión porque el JavaScript del navegador no puede leer la cookie.
+- **Permisos en el backend.** Cada resolver recibe `context.user`
+  (`{ id, nombre, email, rol } | null`). Carrito y pedidos usan
+  `requireUser`; crear, editar o borrar productos y listar todos los pedidos
+  usan `requireAdmin`. Un pedido ajeno se responde igual que uno inexistente.
 
 ## Cómo correrlo
 
-Necesitas Node 22+ y tu propia rama de Neon (te la pasa Santiago por privado).
+Requisitos: Node.js 22.12 o superior y una base PostgreSQL (por ejemplo, un
+proyecto gratuito de Neon).
+
+**1. Backend** (`http://localhost:4000`, con Apollo Sandbox para probar la API):
 
 ```bash
-cd back && npm install
-cp .env.example .env     # pon tu DATABASE_URL
-npm run dev              # http://localhost:4000
-
-cd ../web && npm install
+cd back
+npm install
 cp .env.example .env
-npm run dev              # http://localhost:4321
+npm run dev
 ```
 
-Nunca subas `.env` al repo: tiene la contraseña de la base de datos.
+En `back/.env` pon tu cadena de conexión en `DATABASE_URL`. Al arrancar se crean
+las tablas y los datos semilla de `db.sql` si no existen.
 
-## Flujo de trabajo
+**2. Frontend** (`http://localhost:4321`), en otra terminal:
 
-- Rama por persona: `persona-a/...`, `persona-b/...`, `persona-c/...`. Nadie empuja directo a `main`.
-- PRs pequeños y frecuentes a `main`; lo revisa al menos otra persona.
-- Antes de abrir el PR: `git pull origin main` y comprobar que `npm run build` pasa en `web/`.
-- Marca lo pendiente en el código con `TODO(A)`, `TODO(B)` o `TODO(C)`.
+```bash
+cd web
+npm install
+cp .env.example .env
+npm run dev
+```
 
-## Fases
+`web/.env` solo necesita `GRAPHQL_URL` (por defecto `http://localhost:4000/`).
 
-1. **Fase 0 (lista):** repo, backend en módulos, scaffold de Astro, contratos.
-2. **Fase 1:** cada quien migra su parte en paralelo (ver su guía).
-3. **Fase 2, integración:** `crearPedido` con el usuario real (B+C), huecos del
-   TopBar funcionando (B+C), historial de pedidos en `/perfil` (B lo expone, C lo muestra).
-4. **Fase 3:** QA cruzado (cada quien prueba la parte de otro), borrar `front/` (A) y desplegar (A).
+**Usuarios de prueba** (vienen en `db.sql`):
+
+| Email | Contraseña | Rol |
+|---|---|---|
+| `invitado@tienda.com` | `invitado123` | CLIENTE |
+| `admin@tienda.com` | `admin123` | ADMIN |
+
+Nunca subas los archivos `.env` al repositorio: contienen la contraseña de la base de datos.
+
+## Producción
+
+```bash
+cd web
+npm run build
+node dist/server/entry.mjs     # servidor Node standalone
+```
+
+`web` (adaptador `@astrojs/node`) y `back` pueden desplegarse como dos servicios
+Node (por ejemplo en Render o Railway). En `web` define `GRAPHQL_URL` con la URL
+pública del backend; en `back`, `DATABASE_URL` y, opcionalmente, `PORT`.
+
+## API GraphQL
+
+**Consultas:** `categorias`, `categoria(id)`, `productos(limit, offset, categoriaId)`,
+`producto(id)`, `buscarProductos(texto, categoriaId)`, `carrito`, `misPedidos`,
+`pedido(id)`, `pedidos` (admin), `me`.
+
+**Mutaciones:** `login`, `registrar`, `logout`, `agregarAlCarrito`,
+`cambiarCantidadCarrito`, `quitarDelCarrito`, `vaciarCarritoDB`, `fusionarCarrito`,
+`crearPedido`, y `crearProducto` / `actualizarProducto` / `eliminarProducto` (admin).
+
+Más detalle del backend en [back/README.md](back/README.md).

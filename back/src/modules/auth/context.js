@@ -1,38 +1,10 @@
-// // Dueño: Persona C (auth)
-// //
-// // CONTRATO (no cambiar la forma sin avisar a A y B):
-// //   - El frontend manda la sesión como header `Authorization: Bearer <token>`.
-// //   - Cada resolver recibe `context.user = { id, nombre, email, rol } | null`.
-// //   - requireUser(context) / requireAdmin(context) lanzan error si no aplica.
-// import { one } from "../../lib/sql.js";
-
-// export async function getUserFromRequest(req) {
-//   // Atajo de desarrollo para que B pruebe pedidos antes de que auth exista:
-//   // AUTH_USUARIO_FALSO=1 en back/.env → todas las peticiones son del usuario 1.
-//   if (process.env.AUTH_USUARIO_FALSO) {
-//     return one("SELECT id, nombre, email, rol FROM usuario WHERE id = $1", [
-//       process.env.AUTH_USUARIO_FALSO,
-//     ]);
-//   }
-
-//   const header = req.headers.authorization ?? "";
-//   const token = header.startsWith("Bearer ") ? header.slice(7) : null;
-//   if (!token) return null;
-
-//   // TODO(C): buscar el token en la tabla de sesiones y regresar su usuario.
-//   return null;
-// }
-
-// export function requireUser(context) {
-//   if (!context.user) throw new Error("Necesitas iniciar sesión");
-//   return context.user;
-// }
-
-// export function requireAdmin(context) {
-//   const user = requireUser(context);
-//   if (user.rol !== "ADMIN") throw new Error("Solo un administrador puede hacer esto");
-//   return user;
-// }
+// Dueño: Persona C (auth)
+//
+// CONTRATO (no cambiar la forma sin avisar a A y B):
+//   - El frontend manda la sesión como header `Authorization: Bearer <token>`.
+//   - Cada resolver recibe `context.user = { id, nombre, email, rol } | null`.
+//   - requireUser(context) / requireAdmin(context) lanzan error si no aplica.
+//   - Las sesiones viven en la tabla `sesion`; se guarda el SHA-256 del token.
 import { randomBytes, createHash } from "node:crypto";
 import { one } from "../../lib/sql.js";
 
@@ -61,13 +33,15 @@ export async function cerrarSesion(token) {
 }
 
 export async function getUserFromRequest(req) {
+  // Atajo de desarrollo: AUTH_USUARIO_FALSO=<id> en back/.env hace que todas
+  // las peticiones sean de ese usuario. No usarlo en producción.
   if (process.env.AUTH_USUARIO_FALSO) {
     return one("SELECT id, nombre, email, rol FROM usuario WHERE id = $1", [
       process.env.AUTH_USUARIO_FALSO,
     ]);
   }
 
-   const token = getTokenFromRequest(req);
+  const token = getTokenFromRequest(req);
   if (!token) return null;
 
   return one(
@@ -78,10 +52,12 @@ export async function getUserFromRequest(req) {
     [hashToken(token)]
   );
 }
+
 export function getTokenFromRequest(req) {
   const header = req.headers.authorization ?? "";
   return header.startsWith("Bearer ") ? header.slice(7) : null;
 }
+
 export function requireUser(context) {
   if (!context.user) throw new Error("Necesitas iniciar sesión");
   return context.user;
