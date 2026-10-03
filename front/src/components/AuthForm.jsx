@@ -7,7 +7,7 @@ import { useCartStore } from "../store/useCartStore.js";
 // Mismo patrón que CheckoutView: form controlado + graphqlRequest directo +
 // estados cargando/error locales. onAuthExitosa la llama App.jsx para
 // mandar a la vista de perfil una vez iniciada la sesión.
-export function AuthForm({ onAuthExitosa }) {
+export function AuthForm() {
   const [modo, setModo] = useState("login"); // "login" | "registro"
   const [nombre, setNombre] = useState("");
   const [email, setEmail] = useState("");
@@ -34,8 +34,8 @@ export function AuthForm({ onAuthExitosa }) {
       }
 
       iniciarSesion(usuario); // se persiste solo en localStorage
-      await cargarCarritoDesdeDB(); // trae lo que ya tuviera guardado en la DB
-      onAuthExitosa?.(usuario);
+     await cargarCarritoDesdeDB();
+  window.location.href = "/perfil"; // en vez de onAuthExitosa?.(usuario)
     } catch (err) {
       setError(err.message);
     } finally {

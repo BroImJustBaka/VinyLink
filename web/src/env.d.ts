@@ -1,3 +1,4 @@
+/// <reference types="astro/client" />
 // Archivo compartido (contrato de sesión, lo mantiene C).
 type Usuario = {
   id: string;
