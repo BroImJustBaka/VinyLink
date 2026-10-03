@@ -46,8 +46,11 @@ export const typeDefs = `#graphql
     productos(limit: Int = 20, offset: Int = 0, categoriaId: ID): ProductoPagina!
     "Consulta un producto por su id."
     producto(id: ID!): Producto
+    "Busca productos cuyo nombre o descripción contenga el texto (opcional: dentro de una categoría)."
+    buscarProductos(texto: String!, categoriaId: ID): [Producto!]!
   }
 
+  # Solo administradores: los resolvers usan requireAdmin(context).
   extend type Mutation {
     "Registra un producto nuevo en el catálogo."
     crearProducto(data: ProductoInput!): Producto!
