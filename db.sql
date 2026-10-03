@@ -39,6 +39,19 @@ CREATE TABLE IF NOT EXISTS usuario (
 );
 
 -- ------------------------------------------------------------
+-- Sesion (N) ── (1) Usuario — sesiones de login.
+-- Se guarda el SHA-256 del token (nunca el token en claro).
+-- ------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS sesion (
+  token_hash TEXT PRIMARY KEY,
+  usuario_id INTEGER NOT NULL REFERENCES usuario(id)
+    ON DELETE CASCADE ON UPDATE CASCADE,
+  creada_en  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  expira_en  TIMESTAMPTZ NOT NULL
+);
+CREATE INDEX IF NOT EXISTS sesion_usuario_idx ON sesion(usuario_id);
+
+-- ------------------------------------------------------------
 -- Pedido (N) ── (1) Usuario
 -- ------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS pedido (
@@ -112,7 +125,18 @@ WHERE NOT EXISTS (SELECT 1 FROM producto);
 
 INSERT INTO usuario (nombre, email, password, rol)
 SELECT * FROM (VALUES
-  ('Cliente Invitado', 'invitado@tienda.com', 'invitado123', 'CLIENTE'),
-  ('Admin Tienda', 'admin@tienda.com', 'admin123', 'ADMIN')
+  -- Contraseñas hasheadas con bcrypt (10 rondas). Siguen siendo invitado123 / admin123.
+  ('Cliente Invitado', 'invitado@tienda.com', '$2b$10$.3dS/aRe/XEuWrfv6ATer.MGx5sRfsdjLkUmKhHSJp2HD0jqjvDNi', 'CLIENTE'),
+  ('Admin Tienda', 'admin@tienda.com', '$2b$10$YVA5OCH3SINArNsgdaxOrOXDs6qut7ZcbRxJRilR1tiZfyBLAI03G', 'ADMIN')
 ) AS v(nombre, email, password, rol)
 WHERE NOT EXISTS (SELECT 1 FROM usuario);
+
+-- Migración para bases que ya tenían los usuarios semilla en texto plano.
+-- Solo toca la fila si la contraseña sigue siendo exactamente la de texto
+-- plano, así que es idempotente y no pisa cuentas reales ni hashes.
+UPDATE usuario
+   SET password = '$2b$10$.3dS/aRe/XEuWrfv6ATer.MGx5sRfsdjLkUmKhHSJp2HD0jqjvDNi'
+ WHERE email = 'invitado@tienda.com' AND password = 'invitado123';
+UPDATE usuario
+   SET password = '$2b$10$YVA5OCH3SINArNsgdaxOrOXDs6qut7ZcbRxJRilR1tiZfyBLAI03G'
+ WHERE email = 'admin@tienda.com' AND password = 'admin123';

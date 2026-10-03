@@ -1,10 +1,24 @@
 ---
-// Dueño: Persona C. Migrar desde front/src/views/PerfilView.jsx.
-// Requiere sesión. En la Fase 2 muestra el historial de pedidos que expone B.
+// Dueño: Persona C. Migración de front/src/views/PerfilView.jsx.
+// El middleware ya redirige a /login si no hay sesión, así que aquí
+// Astro.locals.user existe. No necesita ser una isla React ni usar stores.
+// Fase 2: aquí se mostrará misPedidos (B).
 import Layout from "../layouts/Layout.astro";
+
+const usuario = Astro.locals.user!;
 ---
 
 <Layout title="Perfil">
-  <h2>Perfil</h2>
-  <p class="muted">En construcción · Persona C</p>
+  <section class="perfil-view">
+    <h2>Bienvenido, {usuario.nombre}</h2>
+    <p>{usuario.email}</p>
+
+    <div class="perfil-view__acciones">
+      <a class="btn btn--primario" href="/carrito">🛒 Ir al carrito</a>
+
+      <form method="POST" action="/logout">
+        <button class="btn btn--link" type="submit">Cerrar sesión</button>
+      </form>
+    </div>
+  </section>
 </Layout>
