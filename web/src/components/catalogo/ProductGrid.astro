@@ -1,0 +1,25 @@
+---
+// Dueño: Persona A. Rejilla de productos con la numeración Side A / Side B
+// que antes vivía en front/src/views/CategoryView.jsx: la primera mitad de la
+// lista es el lado A y la segunda el lado B (detalle visual, no viene del backend).
+import ProductCard from "./ProductCard.astro";
+
+interface Props {
+  productos: {
+    id: string;
+    nombre: string;
+    descripcion: string;
+    precio: number;
+    stock: number;
+    imagen: string;
+  }[];
+}
+
+const { productos } = Astro.props;
+const mitad = Math.ceil(productos.length / 2);
+const numero = (i: number) => `${i < mitad ? "A" : "B"}${(i % mitad) + 1}`;
+---
+
+<div class="grid">
+  {productos.map((prod, i) => <ProductCard producto={prod} numero={numero(i)} />)}
+</div>

@@ -30,3 +30,21 @@ export const QUERY_CATEGORIA = `
     }
   }
 `;
+
+// Búsqueda del TopBar. Sin categoriaId busca en toda la tienda.
+export const QUERY_BUSCAR = `
+  query BuscarProductos($texto: String!, $categoriaId: ID) {
+    buscarProductos(texto: $texto, categoriaId: $categoriaId) {
+      id
+      nombre
+      descripcion
+      precio
+      stock
+      imagen
+      categoria {
+        id
+        nombre
+      }
+    }
+  }
+`;

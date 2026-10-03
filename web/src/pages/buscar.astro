@@ -1,0 +1,61 @@
+---
+// Dueño: Persona A. Resultados de la búsqueda del TopBar en toda la tienda
+// (fuera de una categoría). Dentro de /categoria/[id] el ?q= filtra esa
+// categoría y no llega aquí.
+import Layout from "../layouts/Layout.astro";
+import Sidebar from "../components/catalogo/Sidebar.astro";
+import ProductGrid from "../components/catalogo/ProductGrid.astro";
+import ProductModal from "../components/catalogo/ProductModal.jsx";
+import ErrorBox from "../components/catalogo/ErrorBox.astro";
+import { graphqlServer } from "../lib/graphql";
+import { QUERY_BUSCAR } from "../lib/queries/catalogo.js";
+
+const q = (Astro.url.searchParams.get("q") ?? "").trim();
+
+let productos = [];
+let error: string | null = null;
+if (q) {
+  try {
+    ({ buscarProductos: productos } = await graphqlServer(Astro.cookies, QUERY_BUSCAR, {
+      texto: q,
+    }));
+  } catch (err) {
+    error = (err as Error).message;
+    Astro.response.status = 502;
+  }
+}
+---
+
+<Layout title={q ? `Buscar “${q}”` : "Buscar"}>
+  <Fragment slot="sidebar"><Sidebar /></Fragment>
+
+  <section>
+    <a class="btn btn--link" href="/">← Volver a categorías</a>
+    <h2>{q ? `Resultados para “${q}”` : "Buscar productos"}</h2>
+
+    {!q && <p class="muted">Escribe en el buscador de arriba para encontrar productos.</p>}
+
+    {error && <ErrorBox mensaje={`No se pudo hacer la búsqueda: ${error}`} />}
+
+    {
+      q && !error && (
+        <>
+          <p class="muted">
+            {productos.length === 1
+              ? "1 producto encontrado"
+              : `${productos.length} productos encontrados`}
+          </p>
+          {productos.length === 0 ? (
+            <p class="muted vacio">
+              No encontramos nada con “{q}”. Prueba con otra palabra o explora las categorías.
+            </p>
+          ) : (
+            <ProductGrid productos={productos} />
+          )}
+        </>
+      )
+    }
+  </section>
+
+  <ProductModal client:load />
+</Layout>

@@ -1,19 +1,56 @@
 ---
-// Dueño: Persona A. Migrar desde front/src/views/HomeView.jsx
-// (Hero, CategoryCard, ContextSection) y front/src/components/Sidebar.jsx.
+// Dueño: Persona A. Migrado de front/src/views/HomeView.jsx.
+// Los datos se piden en el servidor: la página llega ya con las categorías,
+// sin skeleton ni useGraphQL.
 import Layout from "../layouts/Layout.astro";
+import Hero from "../components/catalogo/Hero.astro";
+import CategoryCard from "../components/catalogo/CategoryCard.astro";
+import Sidebar from "../components/catalogo/Sidebar.astro";
+import ErrorBox from "../components/catalogo/ErrorBox.astro";
+import ContextSection from "../components/catalogo/ContextSection.jsx";
 import { graphqlServer } from "../lib/graphql";
 import { QUERY_CATEGORIAS } from "../lib/queries/catalogo.js";
 
-const { categorias } = await graphqlServer(Astro.cookies, QUERY_CATEGORIAS);
+type Categoria = { id: string; nombre: string; descripcion: string; imagen: string };
+
+let categorias: Categoria[] = [];
+let error: string | null = null;
+try {
+  ({ categorias } = await graphqlServer(Astro.cookies, QUERY_CATEGORIAS));
+} catch (err) {
+  error = (err as Error).message;
+  Astro.response.status = 502;
+}
+
+// La foto de la primera categoría sirve de fondo para el Hero.
+const imagenHero = categorias[0]?.imagen;
 ---
 
 <Layout>
-  <h2>Categorías</h2>
-  <p class="muted">Página temporal (Fase 0): confirma que Astro, backend y Neon están conectados.</p>
-  <ul>
-    {categorias.map((cat: { id: string; nombre: string }) => (
-      <li><a href={`/categoria/${cat.id}`}>{cat.nombre}</a></li>
-    ))}
-  </ul>
+  <Fragment slot="sidebar"><Sidebar categorias={categorias} /></Fragment>
+
+  <Hero imagen={imagenHero} />
+
+  <section>
+    <h2>Categorías</h2>
+
+    {error && <ErrorBox mensaje={`No se pudo cargar el catálogo: ${error}`} />}
+
+    {
+      !error && (
+        <div class="grid grid--categorias">
+          {categorias.map((cat) => (
+            <CategoryCard categoria={cat} />
+          ))}
+        </div>
+      )
+    }
+  </section>
+
+  <ContextSection client:only="react">
+    <div slot="fallback" class="context-card" aria-hidden="true">
+      <div class="skeleton skeleton--line" style="width: 40%"></div>
+      <div class="skeleton skeleton--line" style="width: 25%"></div>
+    </div>
+  </ContextSection>
 </Layout>
