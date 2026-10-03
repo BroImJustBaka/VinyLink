@@ -1,0 +1,20 @@
+---
+// Dueño: Persona A. Migrado de front/src/components/Hero.jsx.
+// `imagen` es opcional: la home le pasa la foto de una categoría del catálogo
+// para usarla como fondo editorial; sin imagen queda el fondo de surcos.
+interface Props {
+  imagen?: string;
+}
+
+const { imagen } = Astro.props;
+---
+
+<section
+  class:list={["hero", { "hero--foto": imagen }]}
+  style={imagen ? { "--hero-img": `url(${imagen})` } : undefined}
+>
+  <div class="hero__contenido">
+    <h1>Música e instrumentos de todo tipo para todo tipo de personas</h1>
+    <p>Explora nuestras categorías y arma tu pedido en minutos.</p>
+  </div>
+</section>

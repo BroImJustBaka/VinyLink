@@ -1,11 +1,84 @@
 ---
-// Dueño: Persona A. Migrar desde front/src/views/CategoryView.jsx
-// (ProductCard, ProductModal como isla que usa stores/cart.js, búsqueda con ?q=).
+// Dueño: Persona A. Migrado de front/src/views/CategoryView.jsx.
+// Lista de productos de la categoría (numeración A1/B1), filtro ?q= del
+// TopBar y 404 si la categoría no existe. El detalle se abre en la isla
+// ProductModal, que agrega al carrito con useCartStore (B).
 import Layout from "../../layouts/Layout.astro";
+import Sidebar from "../../components/catalogo/Sidebar.astro";
+import ProductGrid from "../../components/catalogo/ProductGrid.astro";
+import ProductModal from "../../components/catalogo/ProductModal.jsx";
+import ErrorBox from "../../components/catalogo/ErrorBox.astro";
+import { graphqlServer } from "../../lib/graphql";
+import { QUERY_CATEGORIA } from "../../lib/queries/catalogo.js";
+
+type Producto = {
+  id: string;
+  nombre: string;
+  descripcion: string;
+  precio: number;
+  stock: number;
+  imagen: string;
+};
+type Categoria = { id: string; nombre: string; descripcion: string; productos: Producto[] };
+
 const { id } = Astro.params;
+const q = (Astro.url.searchParams.get("q") ?? "").trim();
+
+let categoria: Categoria | null = null;
+let error: string | null = null;
+try {
+  ({ categoria } = await graphqlServer(Astro.cookies, QUERY_CATEGORIA, { id }));
+} catch (err) {
+  error = (err as Error).message;
+  Astro.response.status = 502;
+}
+
+if (!error && !categoria) return Astro.rewrite("/404");
+
+const texto = q.toLowerCase();
+const productos = (categoria?.productos ?? []).filter(
+  (p) =>
+    p.nombre.toLowerCase().includes(texto) || p.descripcion.toLowerCase().includes(texto)
+);
 ---
 
-<Layout title="Categoría">
-  <h2>Categoría {id}</h2>
-  <p class="muted">En construcción · Persona A</p>
+<Layout title={categoria?.nombre ?? "Categoría"}>
+  <Fragment slot="sidebar"><Sidebar /></Fragment>
+
+  <section>
+    <a class="btn btn--link" href="/">← Volver a categorías</a>
+
+    {error && <ErrorBox mensaje={`No se pudo cargar la categoría: ${error}`} />}
+
+    {
+      categoria && (
+        <>
+          <h2>{categoria.nombre}</h2>
+          <p class="muted">{categoria.descripcion}</p>
+
+          {q && (
+            <p class="filtro-activo">
+              Resultados para <strong>“{q}”</strong> en {categoria.nombre} ·{" "}
+              <a class="btn btn--link" href={`/categoria/${categoria.id}`}>Quitar filtro</a> ·{" "}
+              <a class="btn btn--link" href={`/buscar?q=${encodeURIComponent(q)}`}>
+                Buscar en toda la tienda
+              </a>
+            </p>
+          )}
+
+          {productos.length === 0 ? (
+            <p class="muted vacio">
+              {q
+                ? "No hay productos que coincidan con la búsqueda."
+                : "Esta categoría todavía no tiene productos."}
+            </p>
+          ) : (
+            <ProductGrid productos={productos} />
+          )}
+        </>
+      )
+    }
+  </section>
+
+  <ProductModal client:load />
 </Layout>

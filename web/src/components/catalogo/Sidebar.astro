@@ -1,0 +1,42 @@
+---
+// Dueño: Persona A. Migrado de front/src/components/Sidebar.jsx.
+// Se usa dentro de <Fragment slot="sidebar"> en las páginas del catálogo.
+// La categoría activa sale de la URL (/categoria/[id]), ya no de un estado.
+// Si la página ya pidió las categorías las pasa por props; si no, las pide aquí.
+import { graphqlServer } from "../../lib/graphql";
+import { QUERY_CATEGORIAS } from "../../lib/queries/catalogo.js";
+
+interface Props {
+  categorias?: { id: string; nombre: string }[];
+}
+
+let categorias = Astro.props.categorias;
+if (!categorias) {
+  try {
+    ({ categorias } = await graphqlServer(Astro.cookies, QUERY_CATEGORIAS));
+  } catch {
+    categorias = []; // la página principal ya muestra el error; el sidebar solo se vacía
+  }
+}
+
+const activaId = Astro.url.pathname.match(/^\/categoria\/([^/]+)/)?.[1];
+---
+
+<aside class="sidebar">
+  <h3>Categorías</h3>
+  <ul>
+    {
+      categorias.map((cat) => (
+        <li>
+          <a
+            href={`/categoria/${cat.id}`}
+            class:list={["sidebar__item", { "sidebar__item--activo": cat.id === activaId }]}
+            aria-current={cat.id === activaId ? "page" : undefined}
+          >
+            {cat.nombre}
+          </a>
+        </li>
+      ))
+    }
+  </ul>
+</aside>
