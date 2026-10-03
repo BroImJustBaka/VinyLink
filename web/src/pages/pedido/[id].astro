@@ -14,7 +14,9 @@ try {
   ({ pedido } = await graphqlServer(Astro.cookies, QUERY_PEDIDO, { id }));
 } catch (err) {
   const mensaje = err instanceof Error ? err.message : String(err);
-  if (mensaje.includes(ERROR_SIN_SESION)) return Astro.redirect("/login");
+  if (mensaje.includes(ERROR_SIN_SESION)) {
+    return Astro.redirect(`/login?next=${encodeURIComponent(Astro.url.pathname)}`);
+  }
   error = mensaje;
 }
 

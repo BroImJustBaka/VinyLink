@@ -52,6 +52,7 @@ const query = next ? `?next=${encodeURIComponent(next)}` : "";
         type="password"
         name="password"
         required
+        minlength={modo === "registro" ? 6 : undefined}
         autocomplete={modo === "login" ? "current-password" : "new-password"}
       />
     </label>

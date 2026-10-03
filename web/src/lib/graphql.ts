@@ -13,6 +13,15 @@ import type { AstroCookies } from "astro";
 
 export const SESSION_COOKIE = "sid";
 
+// fetch lanza un TypeError genérico ("fetch failed") si el backend no responde.
+async function enviar(url: string, init: RequestInit) {
+  try {
+    return await fetch(url, init);
+  } catch {
+    throw new Error("No hay conexión con el servidor. Intenta de nuevo en unos segundos.");
+  }
+}
+
 async function parse(res: Response) {
   if (!res.ok) throw new Error(`Error de red (${res.status}) al contactar el servidor`);
   const { data, errors } = await res.json();
@@ -26,7 +35,7 @@ export async function graphqlServer(
   variables: Record<string, unknown> = {}
 ) {
   const token = cookies.get(SESSION_COOKIE)?.value;
-  const res = await fetch(import.meta.env.GRAPHQL_URL ?? "http://localhost:4000/", {
+  const res = await enviar(import.meta.env.GRAPHQL_URL ?? "http://localhost:4000/", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -38,7 +47,7 @@ export async function graphqlServer(
 }
 
 export async function graphqlClient(query: string, variables: Record<string, unknown> = {}) {
-  const res = await fetch("/api/graphql", {
+  const res = await enviar("/api/graphql", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ query, variables }),
