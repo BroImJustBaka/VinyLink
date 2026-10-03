@@ -1,11 +1,74 @@
 ---
 // Dueño: Persona B. Confirmación de pedido (reemplaza el aviso
-// "confirmacion-box" que hoy vive en front/src/App.jsx).
+// "confirmacion-box" que vivía en front/src/App.jsx).
+// Renderizada en el servidor: usa la sesión para pedir solo pedidos propios.
 import Layout from "../../layouts/Layout.astro";
+import { graphqlServer } from "../../lib/graphql";
+import { ERROR_SIN_SESION, QUERY_PEDIDO } from "../../lib/queries/pedidos.js";
+
 const { id } = Astro.params;
+
+let pedido = null;
+let error: string | null = null;
+try {
+  ({ pedido } = await graphqlServer(Astro.cookies, QUERY_PEDIDO, { id }));
+} catch (err) {
+  const mensaje = err instanceof Error ? err.message : String(err);
+  if (mensaje.includes(ERROR_SIN_SESION)) return Astro.redirect("/login");
+  error = mensaje;
+}
+
+// null = no existe o es de otra persona (se ve igual a propósito).
+if (!error && !pedido) return Astro.rewrite("/404");
+
+const fecha = pedido
+  ? new Date(pedido.fecha).toLocaleString("es-MX", { dateStyle: "long", timeStyle: "short" })
+  : "";
 ---
 
-<Layout title="Pedido">
-  <h2>Pedido #{id}</h2>
-  <p class="muted">En construcción · Persona B</p>
+<Layout title={`Pedido #${id}`}>
+  {
+    error ? (
+      <div class="error-box">
+        <p>No se pudo cargar el pedido: {error}</p>
+      </div>
+    ) : (
+      <section>
+        <div class="confirmacion-box">
+          <span>
+            ✅ ¡Pedido #{pedido.id} {pedido.estado}! Total: ${pedido.total.toFixed(2)}
+          </span>
+        </div>
+
+        <p class="muted">Realizado el {fecha}</p>
+
+        <ul class="cart-list">
+          {pedido.detalles.map((d: any) => (
+            <li class="cart-item">
+              <img src={d.producto.imagen} alt={d.producto.nombre} />
+              <div class="cart-item__info">
+                <strong>{d.producto.nombre}</strong>
+                <span class="muted">${d.precioUnitario.toFixed(2)} c/u</span>
+              </div>
+              <span>× {d.cantidad}</span>
+              <span class="precio">${d.subtotal.toFixed(2)}</span>
+            </li>
+          ))}
+        </ul>
+
+        <p class="cart-total">
+          <strong>Total: ${pedido.total.toFixed(2)}</strong>
+        </p>
+
+        <div class="cart-acciones">
+          <a class="btn btn--primario" href="/">
+            Seguir comprando
+          </a>
+          <a class="btn" href="/perfil">
+            Ver mis pedidos
+          </a>
+        </div>
+      </section>
+    )
+  }
 </Layout>

@@ -25,11 +25,15 @@ export const typeDefs = `#graphql
     cantidad: Int!
   }
 
-  "Datos del comprador y los renglones para registrar un pedido."
+  "Renglones para registrar un pedido. El comprador es el usuario con sesión."
   input PedidoInput {
-    nombre: String!
-    email: String!
     items: [DetallePedidoInput!]!
+  }
+
+  "Un renglón del carrito de invitado que se fusiona al iniciar sesión."
+  input ItemCarritoInput {
+    productoId: ID!
+    cantidad: Int!
   }
 
   "Un renglón del carrito guardado en base de datos."
@@ -49,24 +53,28 @@ export const typeDefs = `#graphql
   }
 
   extend type Query {
-    "Historial de pedidos registrados."
+    "Todos los pedidos de la tienda (solo ADMIN)."
     pedidos: [Pedido!]!
-    "Consulta un pedido por su id."
+    "Pedidos del usuario con sesión, del más reciente al más antiguo."
+    misPedidos: [Pedido!]!
+    "Consulta un pedido por id. Solo su dueño o un ADMIN; para cualquier otro regresa null."
     pedido(id: ID!): Pedido
-    "Carrito guardado en base de datos para un usuario (lo crea vacío si no existe)."
-    carrito(usuarioId: ID!): Carrito!
+    "Carrito del usuario con sesión (lo crea vacío si no existe)."
+    carrito: Carrito!
   }
 
   extend type Mutation {
-    "Registra un pedido con sus renglones; descuenta el stock de cada producto."
+    "Registra un pedido para el usuario con sesión; descuenta stock y vacía su carrito en DB."
     crearPedido(data: PedidoInput!): Pedido!
     "Agrega un producto al carrito del usuario (suma cantidad si ya estaba)."
-    agregarAlCarrito(usuarioId: ID!, productoId: ID!, cantidad: Int = 1): Carrito!
+    agregarAlCarrito(productoId: ID!, cantidad: Int = 1): Carrito!
     "Fija la cantidad exacta de un renglón del carrito (lo quita si llega a 0)."
-    cambiarCantidadCarrito(usuarioId: ID!, productoId: ID!, cantidad: Int!): Carrito!
+    cambiarCantidadCarrito(productoId: ID!, cantidad: Int!): Carrito!
     "Quita un producto del carrito por completo."
-    quitarDelCarrito(usuarioId: ID!, productoId: ID!): Carrito!
+    quitarDelCarrito(productoId: ID!): Carrito!
     "Vacía todos los renglones del carrito."
-    vaciarCarritoDB(usuarioId: ID!): Carrito!
+    vaciarCarritoDB: Carrito!
+    "Suma los renglones del carrito de invitado al carrito del usuario (respeta el stock)."
+    fusionarCarrito(items: [ItemCarritoInput!]!): Carrito!
   }
 `;
