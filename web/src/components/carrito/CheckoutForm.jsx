@@ -315,7 +315,12 @@ function FormTarjeta({ metodo, crearPedido, irAlPedido, total, modoPrueba }) {
         onLoadError={({ error: e }) =>
           setError(`No se pudo cargar el formulario de tarjeta de Stripe: ${e?.message ?? "error desconocido"}`)
         }
-        options={{ layout: "tabs" }}
+        // Sin Apple Pay, Google Pay ni Stripe Link: solo los datos de la tarjeta.
+        // Link abría su propia ventana pidiendo un código y confundía el pago.
+        options={{
+          layout: "tabs",
+          wallets: { applePay: "never", googlePay: "never", link: "never" },
+        }}
       />
 
       {modoPrueba && (
