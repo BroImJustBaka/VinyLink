@@ -1,0 +1,23 @@
+---
+// A esta página regresa Stripe después de pagar un link de pago. Es pública:
+// quien paga un link puede ser otra persona sin cuenta en la tienda, así que
+// no muestra datos del pedido, solo el número.
+import Layout from "../../layouts/Layout.astro";
+
+const pedido = Astro.url.searchParams.get("pedido");
+const numero = pedido && /^\d+$/.test(pedido) ? pedido : null;
+---
+
+<Layout title="¡Gracias por tu pago!">
+  <section class="no-encontrado">
+    <p class="no-encontrado__codigo" aria-hidden="true">✓</p>
+    <h2>¡Gracias por tu pago!</h2>
+    <p class="muted">
+      {numero ? `Recibimos el pago del pedido #${numero}.` : "Recibimos tu pago."} Si pagaste en OXXO,
+      el pedido se confirma en cuanto la tienda reporte el pago.
+    </p>
+    <a class="btn btn--primario" href={numero ? `/pedido/${numero}` : "/"}>
+      {numero ? "Ver el pedido" : "Volver a la tienda"}
+    </a>
+  </section>
+</Layout>

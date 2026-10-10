@@ -3,6 +3,12 @@
 const user = Astro.locals.user;
 ---
 
+{user?.rol === "ADMIN" && (
+  <a class="topbar__perfil topbar__admin" href="/admin">
+    Panel admin
+  </a>
+)}
+
 {
   user ? (
     <a class="topbar__perfil" href="/perfil">

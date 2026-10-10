@@ -7,6 +7,35 @@ import { requireAdmin } from "../auth/context.js";
 // /categoria/abc) haría fallar a PostgreSQL; lo tratamos como "no existe".
 const esIdValido = (id) => /^\d+$/.test(String(id));
 
+// Revisa los datos de un producto antes de guardarlo (lo usa el panel admin)
+// para responder con un mensaje claro en vez del error crudo de PostgreSQL.
+async function validarProducto(data) {
+  const limpio = {
+    ...data,
+    nombre: data.nombre.trim(),
+    descripcion: data.descripcion.trim(),
+    imagen: data.imagen.trim(),
+  };
+  if (!limpio.nombre) throw new Error("Escribe el nombre del producto");
+  if (!limpio.descripcion) throw new Error("Escribe la descripción del producto");
+  if (!Number.isFinite(limpio.precio) || limpio.precio <= 0) {
+    throw new Error("El precio debe ser mayor a 0");
+  }
+  // Se guarda con 2 decimales como máximo (centavos).
+  limpio.precio = Math.round(limpio.precio * 100) / 100;
+  if (!Number.isInteger(limpio.stock) || limpio.stock < 0) {
+    throw new Error("El stock debe ser un número entero de 0 o más");
+  }
+  if (!/^https?:\/\/\S+$/.test(limpio.imagen)) {
+    throw new Error("La imagen debe ser una URL que empiece con http:// o https://");
+  }
+  const categoria = esIdValido(limpio.categoriaId)
+    ? await one("SELECT id FROM categoria WHERE id = $1", [limpio.categoriaId])
+    : null;
+  if (!categoria) throw new Error(`No existe la categoría con id ${limpio.categoriaId}`);
+  return limpio;
+}
+
 export const resolvers = {
   Query: {
     // Nota N+1: Categoria.productos hace una consulta por categoría.
@@ -66,12 +95,9 @@ export const resolvers = {
 
   // Escrituras del catálogo: solo administradores (contrato de C).
   Mutation: {
-    crearProducto: async (_padre, { data }, context) => {
+    crearProducto: async (_padre, { data: datos }, context) => {
       requireAdmin(context);
-      const categoria = await one("SELECT * FROM categoria WHERE id = $1", [data.categoriaId]);
-      if (!categoria) {
-        throw new Error(`No existe la categoría con id ${data.categoriaId}`);
-      }
+      const data = await validarProducto(datos);
       const fila = await one(
         `INSERT INTO producto (nombre, descripcion, precio, stock, imagen, categoria_id)
          VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
@@ -80,8 +106,9 @@ export const resolvers = {
       return mapProducto(fila);
     },
 
-    actualizarProducto: async (_padre, { id, data }, context) => {
+    actualizarProducto: async (_padre, { id, data: datos }, context) => {
       requireAdmin(context);
+      const data = await validarProducto(datos);
       const existente = esIdValido(id)
         ? await one("SELECT * FROM producto WHERE id = $1", [id])
         : null;
@@ -97,8 +124,19 @@ export const resolvers = {
     eliminarProducto: async (_padre, { id }, context) => {
       requireAdmin(context);
       if (!esIdValido(id)) return false;
-      const { rowCount } = await pool.query("DELETE FROM producto WHERE id = $1", [id]);
-      return rowCount > 0;
+      try {
+        const { rowCount } = await pool.query("DELETE FROM producto WHERE id = $1", [id]);
+        return rowCount > 0;
+      } catch (err) {
+        // El producto aparece en pedidos (detalle_pedido lo protege con
+        // ON DELETE RESTRICT → código 23001; 23503 es la violación de llave foránea general).
+        if (err.code === "23001" || err.code === "23503") {
+          throw new Error(
+            "No se puede eliminar: el producto ya aparece en pedidos. Pon su stock en 0 para dejar de venderlo."
+          );
+        }
+        throw err;
+      }
     },
   },
 };

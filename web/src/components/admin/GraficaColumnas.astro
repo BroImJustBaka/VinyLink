@@ -1,0 +1,135 @@
+---
+// Gráfica de columnas (HTML + CSS) para una serie en el tiempo: una columna
+// por día. Incluye los días sin ventas para no "saltarse" fechas. Solo la
+// columna más alta lleva su valor escrito; el resto se ve con el eje, el
+// tooltip o la tabla.
+interface Punto {
+  etiqueta: string; // fecha completa (tooltip y tabla)
+  corta: string; // fecha corta para el eje X
+  valor: number;
+  textoValor: string;
+  detalle?: string;
+}
+
+interface Props {
+  titulo: string;
+  subtitulo?: string;
+  puntos: Punto[];
+  vacio: string;
+  columnaValor: string;
+  columnaDetalle?: string;
+}
+
+const { titulo, subtitulo, puntos, vacio, columnaValor, columnaDetalle } = Astro.props;
+
+// Marcas "redondas" del eje Y (0, 2,000, 4,000...): pasos de 1, 2, 2.5 o 5 × 10^n.
+function escalaBonita(maximo: number, marcas = 4) {
+  if (maximo <= 0) return [0, 1];
+  const bruto = maximo / marcas;
+  const potencia = 10 ** Math.floor(Math.log10(bruto));
+  const paso = [1, 2, 2.5, 5, 10].map((m) => m * potencia).find((p) => p >= bruto) ?? bruto;
+  const pasos = Math.ceil(maximo / paso);
+  return Array.from({ length: pasos + 1 }, (_, i) => i * paso);
+}
+
+const maximo = Math.max(...puntos.map((p) => p.valor), 0);
+const marcas = escalaBonita(maximo);
+const tope = marcas[marcas.length - 1];
+const sinDatos = maximo === 0;
+const indiceMaximo = puntos.findIndex((p) => p.valor === maximo);
+
+// Unas 6 fechas en el eje X, contando desde la última (hoy siempre aparece).
+// En pantallas angostas el CSS oculta una sí y una no (--secundaria).
+const salto = Math.max(1, Math.ceil(puntos.length / 6));
+const conEtiqueta = (i: number) => (puntos.length - 1 - i) % salto === 0;
+const secundaria = (i: number) => ((puntos.length - 1 - i) / salto) % 2 === 1;
+
+// La etiqueta del máximo se alinea hacia adentro si la columna está en una orilla.
+const posicionMaximo =
+  indiceMaximo < puntos.length * 0.15 ? "inicio" : indiceMaximo > puntos.length * 0.85 ? "fin" : "centro";
+
+const ejeY = (n: number) => `$${n.toLocaleString("es-MX", { maximumFractionDigits: 0 })}`;
+---
+
+<figure class="grafica">
+  <figcaption class="grafica__titulo">
+    <h3>{titulo}</h3>
+    {subtitulo && <p class="muted">{subtitulo}</p>}
+  </figcaption>
+
+  {
+    sinDatos ? (
+      <p class="grafica__vacio">{vacio}</p>
+    ) : (
+      <>
+        <div class="columnas">
+          <div class="columnas__eje-y" aria-hidden="true">
+            {marcas.map((m) => (
+              <span style={`--y: ${m / tope}`}>{ejeY(m)}</span>
+            ))}
+          </div>
+          <div class="columnas__plot">
+            {marcas.map((m) => (
+              <span class="columnas__guia" style={`--y: ${m / tope}`} />
+            ))}
+            <div class="columnas__barras">
+              {puntos.map((p, i) => (
+                <div
+                  class="columnas__banda"
+                  tabindex="0"
+                  data-tip-titulo={p.etiqueta}
+                  data-tip-valor={p.textoValor}
+                  data-tip-detalle={p.detalle}
+                  aria-label={`${p.etiqueta}: ${p.textoValor}${p.detalle ? `, ${p.detalle}` : ""}`}
+                >
+                  {i === indiceMaximo && (
+                    <span
+                      class={`columnas__maximo columnas__maximo--${posicionMaximo}`}
+                      style={`--y: ${p.valor / tope}`}
+                    >
+                      {p.textoValor}
+                    </span>
+                  )}
+                  <span class="columnas__barra" style={`--y: ${p.valor / tope}`} />
+                </div>
+              ))}
+            </div>
+          </div>
+          <div class="columnas__eje-x" aria-hidden="true">
+            {puntos.map((p, i) => (
+              <span class:list={{ "columnas__x--secundaria": conEtiqueta(i) && secundaria(i) }}>
+                {conEtiqueta(i) ? p.corta : ""}
+              </span>
+            ))}
+          </div>
+        </div>
+
+        <details class="grafica__tabla">
+          <summary>Ver como tabla</summary>
+          <table class="tabla">
+            <thead>
+              <tr>
+                <th scope="col">Fecha</th>
+                <th scope="col" class="num">{columnaValor}</th>
+                {columnaDetalle && <th scope="col" class="num">{columnaDetalle}</th>}
+              </tr>
+            </thead>
+            <tbody>
+              {puntos.map((p) => (
+                <tr>
+                  <td>{p.etiqueta}</td>
+                  <td class="num">{p.textoValor}</td>
+                  {columnaDetalle && <td class="num">{p.detalle}</td>}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </details>
+      </>
+    )
+  }
+</figure>
+
+<script>
+  import "../../scripts/tooltip-graficas.ts";
+</script>

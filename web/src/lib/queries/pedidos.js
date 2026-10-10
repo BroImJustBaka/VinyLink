@@ -3,6 +3,9 @@
 // Todas estas operaciones usan la sesión (cookie → Authorization): ya no se
 // manda `usuarioId`, el backend lo toma de `context.user`.
 
+// Crear un pedido ahora es pagar: MUTATION_CREAR_PEDIDO está en ./pagos.js.
+import { CAMPOS_PAGO } from "./pagos.js";
+
 // Mensaje que el backend lanza (requireUser) cuando no hay sesión.
 export const ERROR_SIN_SESION = "Necesitas iniciar sesión";
 
@@ -11,6 +14,11 @@ const CAMPOS_PEDIDO = `
   fecha
   estado
   total
+  metodoPago
+  pagadoEn
+  pago {
+    ${CAMPOS_PAGO}
+  }
   detalles {
     id
     cantidad
@@ -20,17 +28,6 @@ const CAMPOS_PEDIDO = `
       id
       nombre
       imagen
-    }
-  }
-`;
-
-export const MUTATION_CREAR_PEDIDO = `
-  mutation CrearPedido($data: PedidoInput!) {
-    crearPedido(data: $data) {
-      id
-      total
-      estado
-      fecha
     }
   }
 `;

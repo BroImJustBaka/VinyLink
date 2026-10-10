@@ -1,0 +1,199 @@
+---
+// Panel admin → Links de pago. Para ventas por WhatsApp o redes: el admin
+// arma un pedido a nombre de un cliente y obtiene un link de Stripe para
+// mandárselo. El stock se aparta al crear el link y se libera si vence.
+import Layout from "../../layouts/Layout.astro";
+import AdminNav from "../../components/admin/AdminNav.astro";
+import { graphqlServer } from "../../lib/graphql";
+import { QUERY_LINKS, MUTATION_CREAR_LINK_ADMIN } from "../../lib/queries/admin.js";
+import { dinero, fechaHora, ESTADOS_PEDIDO } from "../../lib/formato.js";
+
+const RENGLONES = 5; // renglones de producto en el formulario
+
+let error: string | null = null;
+let elegido = { usuarioId: "", items: [] as { productoId: string; cantidad: number }[] };
+
+if (Astro.request.method === "POST") {
+  const form = await Astro.request.formData();
+  elegido.usuarioId = String(form.get("usuarioId") ?? "");
+  for (let i = 0; i < RENGLONES; i++) {
+    const productoId = String(form.get(`producto${i}`) ?? "");
+    const cantidad = Number.parseInt(String(form.get(`cantidad${i}`) ?? ""), 10);
+    if (productoId && cantidad > 0) elegido.items.push({ productoId, cantidad });
+  }
+  try {
+    if (elegido.items.length === 0) throw new Error("Agrega al menos un producto con su cantidad");
+    const { crearLinkDePagoAdmin } = await graphqlServer(Astro.cookies, MUTATION_CREAR_LINK_ADMIN, {
+      usuarioId: elegido.usuarioId,
+      items: elegido.items,
+    });
+    return Astro.redirect(`/admin/links?nuevo=${crearLinkDePagoAdmin.pedido.id}`, 303);
+  } catch (err) {
+    error = err instanceof Error ? err.message : String(err);
+  }
+}
+
+let datos: any = null;
+try {
+  datos = await graphqlServer(Astro.cookies, QUERY_LINKS);
+} catch (err) {
+  error ??= err instanceof Error ? err.message : String(err);
+}
+
+const clientes = (datos?.adminClientes ?? []).map((c: any) => c.usuario);
+const productos = (datos?.productos.items ?? []).filter((p: any) => p.stock > 0);
+const recientes = datos?.adminPedidos.items ?? [];
+const nuevoId = Astro.url.searchParams.get("nuevo");
+const nuevo = recientes.find((p: any) => p.id === nuevoId);
+const whatsapp = (url: string) =>
+  `https://wa.me/?text=${encodeURIComponent(`Aquí puedes pagar tu pedido de VinyLink: ${url}`)}`;
+---
+
+<Layout title="Links de pago · Admin">
+  <Fragment slot="sidebar"><AdminNav /></Fragment>
+
+  <section class="admin">
+    <div class="admin__cabecera">
+      <div>
+        <h2>Links de pago</h2>
+        <p class="muted">
+          Crea un pedido para un cliente y mándale el link: puede pagar con tarjeta (incluso a meses) u OXXO.
+          El link vence en 24 horas.
+        </p>
+      </div>
+    </div>
+
+    {
+      nuevo?.pago?.link?.url && (
+        <div class="pago-panel pago-panel--destacado">
+          <h3>Link listo para el pedido #{nuevo.id} · {dinero(nuevo.total)}</h3>
+          <p class="pago-link">
+            <input type="text" readonly value={nuevo.pago.link.url} aria-label="Link de pago" />
+          </p>
+          <div class="pago-panel__acciones">
+            <button class="btn btn--primario" type="button" data-copiar={nuevo.pago.link.url}>
+              Copiar link
+            </button>
+            <a class="btn" href={whatsapp(nuevo.pago.link.url)} target="_blank" rel="noopener">
+              Enviar por WhatsApp
+            </a>
+            <a class="btn" href={`/admin/pedidos/${nuevo.id}`}>Ver pedido</a>
+          </div>
+        </div>
+      )
+    }
+
+    {
+      error && (
+        <div class="error-box" role="alert">
+          <p>{error}</p>
+        </div>
+      )
+    }
+
+    {
+      datos && !datos.configPagos.habilitado ? (
+        <div class="error-box">
+          <p>Los pagos en línea no están configurados (faltan las llaves de Stripe en back/.env).</p>
+        </div>
+      ) : (
+        <form method="post" action="/admin/links" class="panel-card formulario-link">
+          <h3>Nuevo link</h3>
+          <label>
+            Cliente
+            <select name="usuarioId" required>
+              <option value="" disabled selected={!elegido.usuarioId}>
+                Elige un cliente
+              </option>
+              {clientes.map((c: any) => (
+                <option value={c.id} selected={c.id === elegido.usuarioId}>
+                  {c.nombre} ({c.email})
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <fieldset class="formulario-link__productos">
+            <legend>Productos</legend>
+            {Array.from({ length: RENGLONES }, (_, i) => (
+              <div class="formulario-link__renglon">
+                <select name={`producto${i}`} aria-label={`Producto ${i + 1}`}>
+                  <option value="">—</option>
+                  {productos.map((p: any) => (
+                    <option value={p.id} selected={elegido.items[i]?.productoId === p.id}>
+                      {p.nombre} · {dinero(p.precio)} ({p.stock} disp.)
+                    </option>
+                  ))}
+                </select>
+                <input
+                  type="number"
+                  name={`cantidad${i}`}
+                  min="1"
+                  value={elegido.items[i]?.cantidad ?? 1}
+                  aria-label={`Cantidad del producto ${i + 1}`}
+                />
+              </div>
+            ))}
+          </fieldset>
+
+          <button class="btn btn--primario" type="submit">
+            Crear link de pago
+          </button>
+        </form>
+      )
+    }
+
+    <div class="panel-card">
+      <h3>Links recientes</h3>
+      {
+        recientes.length === 0 ? (
+          <p class="muted">Todavía no hay links de pago.</p>
+        ) : (
+          <div class="tabla-scroll">
+            <table class="tabla">
+              <thead>
+                <tr>
+                  <th scope="col">Pedido</th>
+                  <th scope="col">Cliente</th>
+                  <th scope="col">Estado</th>
+                  <th scope="col" class="num">Total</th>
+                  <th scope="col">Link</th>
+                </tr>
+              </thead>
+              <tbody>
+                {recientes.map((p: any) => (
+                  <tr>
+                    <td>
+                      <a href={`/admin/pedidos/${p.id}`}>#{p.id}</a>
+                      <span class="muted tabla__sub">{fechaHora(p.fecha)}</span>
+                    </td>
+                    <td>{p.usuario.nombre}</td>
+                    <td>
+                      <span class={`estado estado--${p.estado}`}>
+                        {ESTADOS_PEDIDO[p.estado as keyof typeof ESTADOS_PEDIDO] ?? p.estado}
+                      </span>
+                    </td>
+                    <td class="num">{dinero(p.total)}</td>
+                    <td>
+                      {p.estado === "pendiente" && p.pago?.link?.url ? (
+                        <button class="btn btn--chico" type="button" data-copiar={p.pago.link.url}>
+                          Copiar
+                        </button>
+                      ) : (
+                        <span class="muted">—</span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )
+      }
+    </div>
+  </section>
+</Layout>
+
+<script>
+  import "../../scripts/copiar.ts";
+</script>

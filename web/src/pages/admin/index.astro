@@ -1,0 +1,222 @@
+---
+// Panel admin → Resumen. Indicadores del periodo, productos más vendidos,
+// ingresos por día y por método de pago, stock bajo y pedidos recientes.
+// El middleware ya garantiza que solo entra un ADMIN.
+import Layout from "../../layouts/Layout.astro";
+import AdminNav from "../../components/admin/AdminNav.astro";
+import Kpi from "../../components/admin/Kpi.astro";
+import GraficaBarras from "../../components/admin/GraficaBarras.astro";
+import GraficaColumnas from "../../components/admin/GraficaColumnas.astro";
+import { graphqlServer } from "../../lib/graphql";
+import { QUERY_TABLERO } from "../../lib/queries/admin.js";
+import { dinero, fecha, ESTADOS_PEDIDO, METODOS_PAGO } from "../../lib/formato.js";
+
+const PERIODOS = [7, 30, 90];
+const pedidoDias = Number(Astro.url.searchParams.get("dias"));
+const dias = PERIODOS.includes(pedidoDias) ? pedidoDias : 30;
+
+let datos: any = null;
+let error: string | null = null;
+try {
+  datos = await graphqlServer(Astro.cookies, QUERY_TABLERO, { dias });
+} catch (err) {
+  error = err instanceof Error ? err.message : String(err);
+}
+
+const r = datos?.adminResumen;
+const plural = (n: number, una: string, varias: string) => `${n} ${n === 1 ? una : varias}`;
+
+// Las fechas vienen como "2026-10-09" (ya en hora de México); se formatean
+// en UTC para que el navegador/servidor no las mueva un día.
+const diaCorto = new Intl.DateTimeFormat("es-MX", { day: "numeric", month: "short", timeZone: "UTC" });
+const diaLargo = new Intl.DateTimeFormat("es-MX", {
+  weekday: "short",
+  day: "numeric",
+  month: "long",
+  timeZone: "UTC",
+});
+
+const porDia = (datos?.adminVentasPorDia ?? []).map((d: any) => {
+  const f = new Date(`${d.fecha}T00:00:00Z`);
+  return {
+    etiqueta: diaLargo.format(f),
+    corta: diaCorto.format(f),
+    valor: d.ingresos,
+    textoValor: dinero(d.ingresos),
+    detalle: plural(d.pedidos, "pedido", "pedidos"),
+  };
+});
+
+const masVendidos = (datos?.adminTopProductos ?? []).map((t: any) => ({
+  etiqueta: t.producto.nombre,
+  valor: t.unidades,
+  textoValor: plural(t.unidades, "unidad", "unidades"),
+  detalle: dinero(t.ingresos),
+}));
+
+const porMetodo = (datos?.adminVentasPorMetodo ?? []).map((m: any) => ({
+  etiqueta: METODOS_PAGO[m.metodo as keyof typeof METODOS_PAGO] ?? m.metodo,
+  valor: m.ingresos,
+  textoValor: dinero(m.ingresos),
+  detalle: plural(m.pedidos, "pedido", "pedidos"),
+}));
+---
+
+<Layout title="Panel de administración">
+  <Fragment slot="sidebar"><AdminNav /></Fragment>
+
+  <section class="admin">
+    <div class="admin__cabecera">
+      <div>
+        <h2>Resumen</h2>
+        <p class="muted">Ventas pagadas de los últimos {dias} días.</p>
+      </div>
+      <nav class="periodos" aria-label="Periodo">
+        {
+          PERIODOS.map((p) => (
+            <a
+              href={`/admin?dias=${p}`}
+              class:list={["periodos__opcion", { "periodos__opcion--activa": p === dias }]}
+              aria-current={p === dias ? "true" : undefined}
+            >
+              {p} días
+            </a>
+          ))
+        }
+      </nav>
+    </div>
+
+    {
+      error && (
+        <div class="error-box">
+          <p>No se pudo cargar el resumen: {error}</p>
+        </div>
+      )
+    }
+
+    {
+      r && (
+        <>
+          <div class="kpis">
+            <Kpi
+              etiqueta="Ingresos"
+              valor={dinero(r.ingresos)}
+              actual={r.ingresos}
+              anterior={r.ingresosPeriodoAnterior}
+            />
+            <Kpi
+              etiqueta="Pedidos pagados"
+              valor={r.pedidosPagados.toLocaleString("es-MX")}
+              actual={r.pedidosPagados}
+              anterior={r.pedidosPeriodoAnterior}
+            />
+            <Kpi etiqueta="Ticket promedio" valor={dinero(r.ticketPromedio)} />
+            <Kpi etiqueta="Unidades vendidas" valor={r.unidadesVendidas.toLocaleString("es-MX")} />
+            <Kpi
+              etiqueta="Esperando pago"
+              valor={r.pedidosPendientes.toLocaleString("es-MX")}
+              nota="OXXO, SPEI y links sin pagar todavía"
+            />
+            <Kpi etiqueta="Clientes nuevos" valor={r.clientesNuevos.toLocaleString("es-MX")} />
+          </div>
+
+          <div class="admin__fila">
+            <GraficaBarras
+              titulo="Productos más vendidos"
+              subtitulo="Unidades vendidas en el periodo"
+              filas={masVendidos}
+              vacio="Todavía no hay ventas en este periodo."
+              columnaValor="Unidades"
+              columnaDetalle="Ingresos"
+            />
+            <GraficaBarras
+              titulo="Ventas por método de pago"
+              subtitulo="Ingresos en el periodo"
+              filas={porMetodo}
+              vacio="Todavía no hay ventas en este periodo."
+              columnaValor="Ingresos"
+              columnaDetalle="Pedidos"
+            />
+          </div>
+
+          <GraficaColumnas
+            titulo="Ingresos por día"
+            subtitulo="Hora de la Ciudad de México"
+            puntos={porDia}
+            vacio="Todavía no hay ventas en este periodo."
+            columnaValor="Ingresos"
+            columnaDetalle="Pedidos"
+          />
+
+          <div class="admin__fila admin__fila--asimetrica">
+            <div class="panel-card">
+              <div class="panel-card__cabecera">
+                <h3>Pedidos recientes</h3>
+                <a class="btn btn--link" href="/admin/pedidos">Ver todos</a>
+              </div>
+              {datos.adminPedidos.items.length === 0 ? (
+                <p class="muted">Todavía no hay pedidos.</p>
+              ) : (
+                <div class="tabla-scroll">
+                  <table class="tabla">
+                    <thead>
+                      <tr>
+                        <th scope="col">Pedido</th>
+                        <th scope="col">Cliente</th>
+                        <th scope="col">Estado</th>
+                        <th scope="col" class="num">Total</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {datos.adminPedidos.items.map((p: any) => (
+                        <tr>
+                          <td>
+                            <a href={`/admin/pedidos/${p.id}`}>#{p.id}</a>
+                            <span class="muted tabla__sub">{fecha(p.fecha)}</span>
+                          </td>
+                          <td>
+                            {p.usuario.nombre}
+                            <span class="muted tabla__sub">
+                              {METODOS_PAGO[p.metodoPago as keyof typeof METODOS_PAGO] ?? "Sin registro"}
+                            </span>
+                          </td>
+                          <td>
+                            <span class={`estado estado--${p.estado}`}>
+                              {ESTADOS_PEDIDO[p.estado as keyof typeof ESTADOS_PEDIDO] ?? p.estado}
+                            </span>
+                          </td>
+                          <td class="num">{dinero(p.total)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+
+            <div class="panel-card">
+              <div class="panel-card__cabecera">
+                <h3>Stock bajo</h3>
+                <a class="btn btn--link" href="/admin/productos">Inventario</a>
+              </div>
+              {datos.adminStockBajo.length === 0 ? (
+                <p class="muted">Todos los productos tienen más de 5 piezas.</p>
+              ) : (
+                <ul class="lista-stock">
+                  {datos.adminStockBajo.map((p: any) => (
+                    <li>
+                      <a href={`/admin/productos/${p.id}`}>{p.nombre}</a>
+                      <span class:list={["stock", { "stock--agotado": p.stock === 0 }]}>
+                        {p.stock === 0 ? "Agotado" : plural(p.stock, "pieza", "piezas")}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          </div>
+        </>
+      )
+    }
+  </section>
+</Layout>
