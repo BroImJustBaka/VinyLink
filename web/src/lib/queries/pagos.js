@@ -59,12 +59,3 @@ export const MUTATION_CANCELAR_PEDIDO = `
     }
   }
 `;
-
-export const MUTATION_SIMULAR_SPEI = `
-  mutation SimularTransferenciaSpei($pedidoId: ID!) {
-    simularTransferenciaSpei(pedidoId: $pedidoId) {
-      id
-      estado
-    }
-  }
-`;

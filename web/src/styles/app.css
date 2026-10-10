@@ -792,7 +792,6 @@ a.topbar__admin {
 }
 
 /* --- Avisos --- */
-.aviso-prueba,
 .aviso-info {
   background: #f6efd9;
   border: 1px solid rgba(208, 168, 75, 0.55);
@@ -964,39 +963,6 @@ a.topbar__admin {
 .checkout-form select:focus {
   outline: none;
   border-color: var(--terracotta);
-}
-
-/* Datos de prueba (solo en modo de prueba). */
-.pistas-prueba {
-  background: #f6efd9;
-  border: 1px dashed rgba(208, 168, 75, 0.8);
-  border-radius: 8px;
-  padding: 10px 14px;
-  font-size: 0.88rem;
-}
-.pistas-prueba summary {
-  cursor: pointer;
-  font-weight: 600;
-  color: #5c4a1c;
-}
-.pistas-prueba ul {
-  margin: 8px 0;
-  padding-left: 18px;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-.pistas-prueba code {
-  font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
-  background: var(--paper);
-  padding: 1px 6px;
-  border-radius: 4px;
-}
-.pistas-prueba__botones {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-top: 8px;
 }
 
 /* --- Página del pedido --- */

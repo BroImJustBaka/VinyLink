@@ -12,7 +12,6 @@ import {
 } from "../../../lib/queries/admin.js";
 import {
   MUTATION_CANCELAR_PEDIDO,
-  MUTATION_SIMULAR_SPEI,
   MUTATION_SINCRONIZAR_PAGO,
 } from "../../../lib/queries/pagos.js";
 import {
@@ -34,7 +33,6 @@ const AVISOS: Record<string, string> = {
   cancelar: "Pedido cancelado; el stock regresó al inventario.",
   reembolsar: "Reembolso hecho en Stripe.",
   sincronizar: "Estado revisado con Stripe.",
-  simular_spei: "Transferencia SPEI simulada.",
 };
 
 let error: string | null = null;
@@ -54,8 +52,6 @@ if (Astro.request.method === "POST") {
       });
     } else if (accion === "sincronizar") {
       await graphqlServer(Astro.cookies, MUTATION_SINCRONIZAR_PAGO, { pedidoId: id });
-    } else if (accion === "simular_spei") {
-      await graphqlServer(Astro.cookies, MUTATION_SIMULAR_SPEI, { pedidoId: id });
     } else {
       throw new Error("Acción desconocida");
     }
@@ -87,7 +83,6 @@ const acciones = {
   cancelar: pedido?.estado === "pendiente" && !(pago?.oxxo && pago.estado === "requiere_accion"),
   reembolsar: pagado && pago?.estado === "pagado" && conTarjeta,
   sincronizar: Boolean(pago),
-  simular: pedido?.estado === "pendiente" && pedido.metodoPago === "spei" && modoPrueba,
 };
 // Los formularios mandan a la URL sin ?ok=, para que no quede el aviso viejo.
 const accionUrl = `/admin/pedidos/${id}`;
@@ -237,12 +232,6 @@ const tarjeta = pago?.tarjeta
                 <form method="post" action={accionUrl}>
                   <input type="hidden" name="accion" value="entregado" />
                   <button class="btn btn--primario" type="submit">Marcar como entregado</button>
-                </form>
-              )}
-              {acciones.simular && (
-                <form method="post" action={accionUrl}>
-                  <input type="hidden" name="accion" value="simular_spei" />
-                  <button class="btn" type="submit">Simular transferencia SPEI (prueba)</button>
                 </form>
               )}
               {acciones.sincronizar && (
