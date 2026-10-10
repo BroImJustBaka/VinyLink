@@ -162,6 +162,8 @@ class StripeSimulado {
   constructor(llave) { this.llave = llave; }
   paymentIntents = paymentIntents;
   checkout = { sessions: checkoutSessions };
+  balance = { retrieve: async () => ({ object: "balance", available: [], pending: [] }) };
+
   confirmationTokens = {
     async retrieve(tok) {
       const t = TOKENS[tok];

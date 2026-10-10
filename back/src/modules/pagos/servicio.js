@@ -368,7 +368,11 @@ async function pagarConTarjeta({ usuario, items, metodo, confirmationTokenId }) 
   let token;
   try {
     token = await s.confirmationTokens.retrieve(confirmationTokenId);
-  } catch {
+  } catch (err) {
+    console.error("Stripe no pudo leer el ConfirmationToken:", err.message);
+    if (err.type === "StripeAuthenticationError") {
+      throw new Error("Los pagos no están bien configurados en la tienda (llave de Stripe inválida).");
+    }
     throw new Error("No pudimos leer los datos de la tarjeta. Vuelve a escribirlos.");
   }
   const tarjeta = token.payment_method_preview?.card;

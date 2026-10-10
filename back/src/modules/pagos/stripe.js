@@ -45,4 +45,16 @@ export function revisarConfiguracion() {
     );
   }
   console.log(`Stripe listo en modo ${modoPrueba ? "PRUEBA (sin dinero real)" : "REAL"}.`);
+
+  // Una llamada barata para saber desde el arranque si la llave secreta sirve
+  // (mal copiada, borrada o regenerada en el Dashboard).
+  stripe.balance.retrieve().catch((err) => {
+    if (err.type === "StripeAuthenticationError") {
+      console.error(
+        "✖ Stripe rechazó STRIPE_SECRET_KEY (llave inválida). Vuelve a copiarla del Dashboard → Desarrolladores → Claves de API y reinicia el backend."
+      );
+    } else {
+      console.warn("⚠ Stripe: no se pudo comprobar la llave secreta:", err.message);
+    }
+  });
 }
