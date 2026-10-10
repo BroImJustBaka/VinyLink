@@ -1,0 +1,41 @@
+---
+// Menú lateral del panel admin. Se usa en <Fragment slot="sidebar">.
+// La sección activa se calcula con la URL actual. Importa admin.css, así
+// los estilos del panel solo se cargan en las páginas que lo usan.
+import "../../styles/admin.css";
+
+const SECCIONES = [
+  { href: "/admin", nombre: "Resumen" },
+  { href: "/admin/pedidos", nombre: "Pedidos" },
+  { href: "/admin/productos", nombre: "Productos" },
+  { href: "/admin/clientes", nombre: "Clientes" },
+  { href: "/admin/links", nombre: "Links de pago" },
+];
+
+const ruta = Astro.url.pathname.replace(/\/$/, "") || "/";
+// "/admin" solo está activo en el resumen; las demás también en sus subrutas.
+const activa = (href: string) =>
+  href === "/admin" ? ruta === "/admin" : ruta === href || ruta.startsWith(`${href}/`);
+---
+
+<aside class="sidebar">
+  <h3>Administración</h3>
+  <ul>
+    {
+      SECCIONES.map((s) => (
+        <li>
+          <a
+            href={s.href}
+            class:list={["sidebar__item", { "sidebar__item--activo": activa(s.href) }]}
+            aria-current={activa(s.href) ? "page" : undefined}
+          >
+            {s.nombre}
+          </a>
+        </li>
+      ))
+    }
+    <li>
+      <a href="/" class="sidebar__item">← Volver a la tienda</a>
+    </li>
+  </ul>
+</aside>

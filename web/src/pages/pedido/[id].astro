@@ -1,10 +1,13 @@
 ---
-// Dueño: Persona B. Confirmación de pedido (reemplaza el aviso
-// "confirmacion-box" que vivía en front/src/App.jsx).
+// Dueño: Persona B. Página de un pedido: estado del pago (ficha OXXO, CLABE,
+// link o tarjeta), sus productos y el total.
 // Renderizada en el servidor: usa la sesión para pedir solo pedidos propios.
 import Layout from "../../layouts/Layout.astro";
+import PanelPago from "../../components/pagos/PanelPago.astro";
+import SeguimientoPago from "../../components/pagos/SeguimientoPago.jsx";
 import { graphqlServer } from "../../lib/graphql";
 import { ERROR_SIN_SESION, QUERY_PEDIDO } from "../../lib/queries/pedidos.js";
+import { dinero, fechaHora, ESTADOS_PEDIDO, METODOS_PAGO } from "../../lib/formato.js";
 
 const { id } = Astro.params;
 
@@ -23,9 +26,9 @@ try {
 // null = no existe o es de otra persona (se ve igual a propósito).
 if (!error && !pedido) return Astro.rewrite("/404");
 
-const fecha = pedido
-  ? new Date(pedido.fecha).toLocaleString("es-MX", { dateStyle: "long", timeStyle: "short" })
-  : "";
+const pendiente = pedido?.estado === "pendiente";
+// Stripe no permite cancelar una ficha OXXO ya generada (vence sola).
+const puedeCancelar = pendiente && !(pedido.pago?.oxxo && pedido.pago.estado === "requiere_accion");
 ---
 
 <Layout title={`Pedido #${id}`}>
@@ -35,14 +38,28 @@ const fecha = pedido
         <p>No se pudo cargar el pedido: {error}</p>
       </div>
     ) : (
-      <section>
-        <div class="confirmacion-box">
-          <span>
-            ✅ ¡Pedido #{pedido.id} {pedido.estado}! Total: ${pedido.total.toFixed(2)}
+      <section class="pedido-view">
+        <a class="btn btn--link" href="/perfil">← Mis pedidos</a>
+
+        <div class="pedido-view__cabecera">
+          <h2>Pedido #{pedido.id}</h2>
+          <span class={`estado estado--${pedido.estado}`}>
+            {ESTADOS_PEDIDO[pedido.estado as keyof typeof ESTADOS_PEDIDO] ?? pedido.estado}
           </span>
         </div>
+        <p class="muted">
+          Realizado el {fechaHora(pedido.fecha)}
+          {pedido.metodoPago &&
+            ` · ${METODOS_PAGO[pedido.metodoPago as keyof typeof METODOS_PAGO] ?? pedido.metodoPago}`}
+        </p>
 
-        <p class="muted">Realizado el {fecha}</p>
+        <PanelPago pedido={pedido} />
+        <SeguimientoPago
+          client:load
+          pedidoId={pedido.id}
+          estado={pedido.estado}
+          puedeCancelar={puedeCancelar}
+        />
 
         <ul class="cart-list">
           {pedido.detalles.map((d: any) => (
@@ -50,16 +67,16 @@ const fecha = pedido
               <img src={d.producto.imagen} alt={d.producto.nombre} />
               <div class="cart-item__info">
                 <strong>{d.producto.nombre}</strong>
-                <span class="muted">${d.precioUnitario.toFixed(2)} c/u</span>
+                <span class="muted">{dinero(d.precioUnitario)} c/u</span>
               </div>
               <span>× {d.cantidad}</span>
-              <span class="precio">${d.subtotal.toFixed(2)}</span>
+              <span class="precio">{dinero(d.subtotal)}</span>
             </li>
           ))}
         </ul>
 
         <p class="cart-total">
-          <strong>Total: ${pedido.total.toFixed(2)}</strong>
+          <strong>Total: {dinero(pedido.total)}</strong>
         </p>
 
         <div class="cart-acciones">

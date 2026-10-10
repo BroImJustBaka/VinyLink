@@ -1,0 +1,87 @@
+---
+// Gráfica de barras horizontales (HTML + CSS, sin librerías). Sirve para
+// comparar cantidades entre categorías con nombres largos, como productos.
+// Una sola serie = un solo color y sin leyenda (el título dice qué es).
+// Cada renglón es el área para el tooltip y se puede enfocar con Tab;
+// "Ver como tabla" muestra los mismos datos sin depender del color.
+interface Fila {
+  etiqueta: string;
+  valor: number;
+  textoValor: string;
+  detalle?: string;
+}
+
+interface Props {
+  titulo: string;
+  subtitulo?: string;
+  filas: Fila[];
+  vacio: string;
+  columnaValor: string;
+  columnaDetalle?: string;
+}
+
+const { titulo, subtitulo, filas, vacio, columnaValor, columnaDetalle } = Astro.props;
+const maximo = Math.max(...filas.map((f) => f.valor), 0);
+// Proporción 0–1 del largo de cada barra respecto a la más grande.
+const proporcion = (valor: number) => (maximo > 0 ? valor / maximo : 0);
+---
+
+<figure class="grafica">
+  <figcaption class="grafica__titulo">
+    <h3>{titulo}</h3>
+    {subtitulo && <p class="muted">{subtitulo}</p>}
+  </figcaption>
+
+  {
+    filas.length === 0 ? (
+      <p class="grafica__vacio">{vacio}</p>
+    ) : (
+      <>
+        <ul class="barras">
+          {filas.map((f) => (
+            <li
+              class="barras__fila"
+              tabindex="0"
+              data-tip-titulo={f.etiqueta}
+              data-tip-valor={f.textoValor}
+              data-tip-detalle={f.detalle}
+              aria-label={`${f.etiqueta}: ${f.textoValor}${f.detalle ? `, ${f.detalle}` : ""}`}
+            >
+              <span class="barras__etiqueta">{f.etiqueta}</span>
+              <span class="barras__pista">
+                <span class="barras__barra" style={`--p: ${proporcion(f.valor)}`} />
+                <span class="barras__valor">{f.textoValor}</span>
+              </span>
+            </li>
+          ))}
+        </ul>
+
+        <details class="grafica__tabla">
+          <summary>Ver como tabla</summary>
+          <table class="tabla">
+            <thead>
+              <tr>
+                <th scope="col">Nombre</th>
+                <th scope="col" class="num">{columnaValor}</th>
+                {columnaDetalle && <th scope="col" class="num">{columnaDetalle}</th>}
+              </tr>
+            </thead>
+            <tbody>
+              {filas.map((f) => (
+                <tr>
+                  <td>{f.etiqueta}</td>
+                  <td class="num">{f.textoValor}</td>
+                  {columnaDetalle && <td class="num">{f.detalle}</td>}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </details>
+      </>
+    )
+  }
+</figure>
+
+<script>
+  import "../../scripts/tooltip-graficas.ts";
+</script>
