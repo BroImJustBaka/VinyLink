@@ -95,7 +95,7 @@ export default function CheckoutForm({ user = null, pagos = null, errorConfig = 
     window.location.href = `/pedido/${pedidoId}`;
   }
 
-  const props = { crearPedido, irAlPedido, total, user, modoPrueba: pagos?.modoPrueba };
+  const props = { crearPedido, irAlPedido, total, user };
   const totalCentavos = Math.round(total * 100);
   const oxxoBloqueado = pagos && total > pagos.maximoOxxo;
 
@@ -103,13 +103,6 @@ export default function CheckoutForm({ user = null, pagos = null, errorConfig = 
     <section className="checkout">
       <a href="/carrito">← Volver al carrito</a>
       <h2>Checkout</h2>
-
-      {pagos?.habilitado && pagos.modoPrueba && (
-        <p className="aviso-prueba">
-          <strong>Modo de prueba.</strong> No se cobra dinero real: usa las tarjetas y datos de
-          prueba que aparecen en cada método.
-        </p>
-      )}
 
       <div className="checkout__columnas">
         <div className="checkout__pago">
@@ -183,7 +176,6 @@ export default function CheckoutForm({ user = null, pagos = null, errorConfig = 
                     metodo="spei"
                     boton="Generar CLABE para transferir"
                     texto="Al continuar te mostramos una CLABE y la referencia. Haz la transferencia desde la app de tu banco por el monto exacto; el pedido se confirma solo cuando llega (tienes 3 días)."
-                    pruebas="En la página del pedido aparecerá un botón para simular la transferencia."
                     {...props}
                   />
                 )}
@@ -192,7 +184,6 @@ export default function CheckoutForm({ user = null, pagos = null, errorConfig = 
                     metodo="link"
                     boton="Generar link de pago"
                     texto="Te damos un link seguro de Stripe que puedes abrir ahora, guardar o mandar por WhatsApp. Se puede pagar con tarjeta u OXXO y es válido por 24 horas."
-                    pruebas="En la página de Stripe paga con la tarjeta 4242 4242 4242 4242."
                     {...props}
                   />
                 )}
@@ -246,16 +237,8 @@ function ErrorPago({ error }) {
   );
 }
 
-function PistasPrueba({ children }) {
-  return (
-    <details className="pistas-prueba">
-      <summary>Datos de prueba</summary>
-      {children}
-    </details>
-  );
-}
 
-function FormTarjeta({ metodo, crearPedido, irAlPedido, total, modoPrueba }) {
+function FormTarjeta({ metodo, crearPedido, irAlPedido, total }) {
   const stripe = useStripe();
   const elements = useElements();
   const [listo, setListo] = useState(false);
@@ -323,26 +306,6 @@ function FormTarjeta({ metodo, crearPedido, irAlPedido, total, modoPrueba }) {
         }}
       />
 
-      {modoPrueba && (
-        <PistasPrueba>
-          {metodo === "credito" ? (
-            <ul>
-              <li><code>4242 4242 4242 4242</code> pago aprobado</li>
-              <li><code>4000 0048 4000 0008</code> ofrece meses sin intereses</li>
-              <li><code>4000 0027 6000 3184</code> pide verificación 3D Secure</li>
-              <li><code>4000 0000 0000 0002</code> tarjeta rechazada</li>
-              <li><code>4000 0000 0000 9995</code> fondos insuficientes</li>
-            </ul>
-          ) : (
-            <ul>
-              <li><code>4000 0566 5566 5556</code> Visa débito aprobada</li>
-              <li><code>5200 8282 8282 8210</code> Mastercard débito aprobada</li>
-              <li><code>4242 4242 4242 4242</code> es de crédito: verás el aviso de que elijas crédito</li>
-            </ul>
-          )}
-          <p className="muted">Cualquier fecha futura, cualquier CVC y cualquier código postal.</p>
-        </PistasPrueba>
-      )}
 
       <ErrorPago error={error} />
 
@@ -353,7 +316,7 @@ function FormTarjeta({ metodo, crearPedido, irAlPedido, total, modoPrueba }) {
   );
 }
 
-function FormOxxo({ crearPedido, irAlPedido, user, modoPrueba }) {
+function FormOxxo({ crearPedido, irAlPedido, user }) {
   const [nombre, setNombre] = useState(user?.nombre ?? "");
   const [email, setEmail] = useState(user?.email ?? "");
   const [enviando, setEnviando] = useState(false);
@@ -396,22 +359,6 @@ function FormOxxo({ crearPedido, irAlPedido, user, modoPrueba }) {
         />
       </label>
 
-      {modoPrueba && (
-        <PistasPrueba>
-          <p className="muted">En modo de prueba el email decide qué pasa con la ficha:</p>
-          <div className="pistas-prueba__botones">
-            <button type="button" className="btn btn--chico" onClick={() => setEmail("succeed_immediately@test.com")}>
-              Se paga al instante
-            </button>
-            <button type="button" className="btn btn--chico" onClick={() => setEmail("pago_en_3_minutos@test.com")}>
-              Se paga en 3 minutos
-            </button>
-            <button type="button" className="btn btn--chico" onClick={() => setEmail("expire_immediately@test.com")}>
-              Vence sin pagarse
-            </button>
-          </div>
-        </PistasPrueba>
-      )}
 
       <ErrorPago error={error} />
 
@@ -423,7 +370,7 @@ function FormOxxo({ crearPedido, irAlPedido, user, modoPrueba }) {
 }
 
 // SPEI y link de pago: no piden datos, solo un botón.
-function FormSinDatos({ metodo, boton, texto, pruebas, crearPedido, irAlPedido, modoPrueba }) {
+function FormSinDatos({ metodo, boton, texto, crearPedido, irAlPedido }) {
   const [enviando, setEnviando] = useState(false);
   const [error, setError] = useState(null);
 
@@ -442,11 +389,6 @@ function FormSinDatos({ metodo, boton, texto, pruebas, crearPedido, irAlPedido, 
   return (
     <div className="checkout-form checkout-form--ancho">
       <p className="metodo-panel__texto">{texto}</p>
-      {modoPrueba && (
-        <PistasPrueba>
-          <p className="muted">{pruebas}</p>
-        </PistasPrueba>
-      )}
       <ErrorPago error={error} />
       <button className="btn btn--primario btn--grande" type="button" onClick={generar} disabled={enviando}>
         {enviando ? "Generando..." : boton}

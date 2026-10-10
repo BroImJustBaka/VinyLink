@@ -7,7 +7,6 @@ import PanelPago from "../../components/pagos/PanelPago.astro";
 import SeguimientoPago from "../../components/pagos/SeguimientoPago.jsx";
 import { graphqlServer } from "../../lib/graphql";
 import { ERROR_SIN_SESION, QUERY_PEDIDO } from "../../lib/queries/pedidos.js";
-import { QUERY_CONFIG_PAGOS } from "../../lib/queries/pagos.js";
 import { dinero, fechaHora, ESTADOS_PEDIDO, METODOS_PAGO } from "../../lib/formato.js";
 
 const { id } = Astro.params;
@@ -27,20 +26,9 @@ try {
 // null = no existe o es de otra persona (se ve igual a propósito).
 if (!error && !pedido) return Astro.rewrite("/404");
 
-// Solo para saber si se muestra el botón de simular SPEI (modo de prueba).
-let modoPrueba = false;
-try {
-  ({
-    configPagos: { modoPrueba },
-  } = await graphqlServer(Astro.cookies, QUERY_CONFIG_PAGOS));
-} catch {
-  /* sin config: simplemente no se muestra el botón */
-}
-
 const pendiente = pedido?.estado === "pendiente";
 // Stripe no permite cancelar una ficha OXXO ya generada (vence sola).
 const puedeCancelar = pendiente && !(pedido.pago?.oxxo && pedido.pago.estado === "requiere_accion");
-const puedeSimular = pendiente && pedido.metodoPago === "spei" && modoPrueba;
 ---
 
 <Layout title={`Pedido #${id}`}>
@@ -71,7 +59,6 @@ const puedeSimular = pendiente && pedido.metodoPago === "spei" && modoPrueba;
           pedidoId={pedido.id}
           estado={pedido.estado}
           puedeCancelar={puedeCancelar}
-          puedeSimular={puedeSimular}
         />
 
         <ul class="cart-list">

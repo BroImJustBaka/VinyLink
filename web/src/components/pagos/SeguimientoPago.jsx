@@ -3,21 +3,16 @@
 // Mientras el pedido espera su pago, cada pocos segundos le pide al backend
 // que revise con Stripe (sincronizarPago). Si el estado cambió (se pagó la
 // ficha OXXO, llegó la transferencia, venció...) recarga la página para
-// mostrar el estado nuevo. También tiene los botones "Cancelar pedido" y,
-// en modo de prueba, "Simular transferencia SPEI".
+// mostrar el estado nuevo. También tiene el botón "Cancelar pedido".
 import { useEffect, useState } from "react";
 import { graphqlClient } from "../../lib/graphql.ts";
-import {
-  MUTATION_CANCELAR_PEDIDO,
-  MUTATION_SIMULAR_SPEI,
-  MUTATION_SINCRONIZAR_PAGO,
-} from "../../lib/queries/pagos.js";
+import { MUTATION_CANCELAR_PEDIDO, MUTATION_SINCRONIZAR_PAGO } from "../../lib/queries/pagos.js";
 
 const RAPIDO = 15; // primeras 15 revisiones cada 4 s (1 minuto)
 const MAXIMO = 15 + 56; // luego cada 15 s hasta completar ~15 minutos
 
-export default function SeguimientoPago({ pedidoId, estado, puedeCancelar = false, puedeSimular = false }) {
-  const [trabajando, setTrabajando] = useState(null); // "cancelar" | "simular" | null
+export default function SeguimientoPago({ pedidoId, estado, puedeCancelar = false }) {
+  const [trabajando, setTrabajando] = useState(null); // "cancelar" | null
   const [error, setError] = useState(null);
 
   useEffect(() => {
@@ -71,18 +66,8 @@ export default function SeguimientoPago({ pedidoId, estado, puedeCancelar = fals
         Esperando la confirmación del pago. Esta página se actualiza sola.
       </p>
 
-      {(puedeSimular || puedeCancelar) && (
+      {puedeCancelar && (
         <div className="seguimiento__acciones">
-          {puedeSimular && (
-            <button
-              className="btn btn--chico"
-              type="button"
-              disabled={trabajando !== null}
-              onClick={() => ejecutar("simular", MUTATION_SIMULAR_SPEI, { pedidoId })}
-            >
-              {trabajando === "simular" ? "Simulando..." : "Simular transferencia (modo prueba)"}
-            </button>
-          )}
           {puedeCancelar && (
             <button
               className="btn btn--link"
