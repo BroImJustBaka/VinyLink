@@ -1,0 +1,316 @@
+---
+// Panel admin → detalle de un pedido y sus acciones. Cada botón es un
+// formulario POST con un campo `accion`; al terminar se redirige a la misma
+// página (patrón Post/Redirect/Get) para que recargar no repita la acción.
+import Layout from "../../../layouts/Layout.astro";
+import AdminNav from "../../../components/admin/AdminNav.astro";
+import { graphqlServer } from "../../../lib/graphql";
+import {
+  QUERY_ADMIN_PEDIDO,
+  MUTATION_ACTUALIZAR_ESTADO,
+  MUTATION_REEMBOLSAR,
+} from "../../../lib/queries/admin.js";
+import {
+  MUTATION_CANCELAR_PEDIDO,
+  MUTATION_SINCRONIZAR_PAGO,
+} from "../../../lib/queries/pagos.js";
+import {
+  dinero,
+  fechaHora,
+  enGrupos,
+  ESTADOS_PEDIDO,
+  ESTADOS_PAGO,
+  METODOS_PAGO,
+  MARCAS_TARJETA,
+} from "../../../lib/formato.js";
+
+const { id } = Astro.params;
+
+// Mensajes fijos de éxito (?ok=clave): así nadie puede inyectar texto por la URL.
+const AVISOS: Record<string, string> = {
+  enviado: "Pedido marcado como enviado.",
+  entregado: "Pedido marcado como entregado.",
+  cancelar: "Pedido cancelado; el stock regresó al inventario.",
+  reembolsar: "Reembolso hecho en Stripe.",
+  sincronizar: "Estado revisado con Stripe.",
+};
+
+let error: string | null = null;
+
+if (Astro.request.method === "POST") {
+  const form = await Astro.request.formData();
+  const accion = String(form.get("accion") ?? "");
+  try {
+    if (accion === "enviado" || accion === "entregado") {
+      await graphqlServer(Astro.cookies, MUTATION_ACTUALIZAR_ESTADO, { id, estado: accion });
+    } else if (accion === "cancelar") {
+      await graphqlServer(Astro.cookies, MUTATION_CANCELAR_PEDIDO, { id });
+    } else if (accion === "reembolsar") {
+      await graphqlServer(Astro.cookies, MUTATION_REEMBOLSAR, {
+        id,
+        reponerStock: form.get("reponerStock") === "on",
+      });
+    } else if (accion === "sincronizar") {
+      await graphqlServer(Astro.cookies, MUTATION_SINCRONIZAR_PAGO, { pedidoId: id });
+    } else {
+      throw new Error("Acción desconocida");
+    }
+    return Astro.redirect(`/admin/pedidos/${id}?ok=${accion}`, 303);
+  } catch (err) {
+    error = err instanceof Error ? err.message : String(err);
+  }
+}
+
+const aviso = AVISOS[Astro.url.searchParams.get("ok") ?? ""] ?? null;
+
+let pedido: any = null;
+let modoPrueba = false;
+try {
+  const datos = await graphqlServer(Astro.cookies, QUERY_ADMIN_PEDIDO, { id });
+  pedido = datos.pedido;
+  modoPrueba = datos.configPagos.modoPrueba;
+} catch (err) {
+  error ??= err instanceof Error ? err.message : String(err);
+}
+if (!error && !pedido) return Astro.rewrite("/404");
+
+const pago = pedido?.pago;
+const pagado = ["pagado", "enviado", "entregado"].includes(pedido?.estado);
+const conTarjeta = Boolean(pago?.tarjeta);
+const acciones = {
+  enviar: pedido?.estado === "pagado",
+  entregar: pedido?.estado === "enviado",
+  cancelar: pedido?.estado === "pendiente" && !(pago?.oxxo && pago.estado === "requiere_accion"),
+  reembolsar: pagado && pago?.estado === "pagado" && conTarjeta,
+  sincronizar: Boolean(pago),
+};
+// Los formularios mandan a la URL sin ?ok=, para que no quede el aviso viejo.
+const accionUrl = `/admin/pedidos/${id}`;
+const stripeBase = `https://dashboard.stripe.com/${modoPrueba ? "test/" : ""}payments/`;
+const tarjeta = pago?.tarjeta
+  ? `${MARCAS_TARJETA[pago.tarjeta.marca as keyof typeof MARCAS_TARJETA] ?? pago.tarjeta.marca} •••• ${pago.tarjeta.ultimos4} (${pago.tarjeta.fondos === "debit" ? "débito" : pago.tarjeta.fondos === "credit" ? "crédito" : pago.tarjeta.fondos ?? "—"})`
+  : null;
+---
+
+<Layout title={`Pedido #${id} · Admin`}>
+  <Fragment slot="sidebar"><AdminNav /></Fragment>
+
+  <section class="admin">
+    <a class="btn btn--link" href="/admin/pedidos">← Pedidos</a>
+
+    {aviso && <div class="confirmacion-box"><span>✓ {aviso}</span></div>}
+    {
+      error && (
+        <div class="error-box" role="alert">
+          <p>{error}</p>
+        </div>
+      )
+    }
+
+    {
+      pedido && (
+        <>
+          <div class="pedido-view__cabecera">
+            <h2>Pedido #{pedido.id}</h2>
+            <span class={`estado estado--${pedido.estado}`}>
+              {ESTADOS_PEDIDO[pedido.estado as keyof typeof ESTADOS_PEDIDO] ?? pedido.estado}
+            </span>
+          </div>
+
+          {pedido.nota && (
+            <div class="aviso-info">
+              <p>
+                <strong>Nota:</strong> {pedido.nota}
+              </p>
+            </div>
+          )}
+
+          <div class="admin__fila">
+            <div class="panel-card">
+              <h3>Datos del pedido</h3>
+              <dl class="datos">
+                <dt>Cliente</dt>
+                <dd>
+                  {pedido.usuario.nombre}
+                  <span class="muted tabla__sub">{pedido.usuario.email}</span>
+                </dd>
+                <dt>Fecha</dt>
+                <dd>{fechaHora(pedido.fecha)}</dd>
+                <dt>Método</dt>
+                <dd>{METODOS_PAGO[pedido.metodoPago as keyof typeof METODOS_PAGO] ?? "Sin registro"}</dd>
+                <dt>Pagado el</dt>
+                <dd>{fechaHora(pedido.pagadoEn)}</dd>
+                <dt>Total</dt>
+                <dd>
+                  <strong>{dinero(pedido.total)}</strong>
+                </dd>
+              </dl>
+            </div>
+
+            <div class="panel-card">
+              <h3>Pago en Stripe</h3>
+              {!pago ? (
+                <p class="muted">Este pedido es anterior a los pagos en línea; no tiene cobro en Stripe.</p>
+              ) : (
+                <dl class="datos">
+                  <dt>Estado del cobro</dt>
+                  <dd>{ESTADOS_PAGO[pago.estado as keyof typeof ESTADOS_PAGO] ?? pago.estado}</dd>
+                  {pago.error && (
+                    <>
+                      <dt>Motivo</dt>
+                      <dd>{pago.error}</dd>
+                    </>
+                  )}
+                  {tarjeta && (
+                    <>
+                      <dt>Tarjeta</dt>
+                      <dd>{tarjeta}</dd>
+                    </>
+                  )}
+                  {pago.meses && (
+                    <>
+                      <dt>Meses sin intereses</dt>
+                      <dd>{pago.meses}</dd>
+                    </>
+                  )}
+                  {pago.oxxo && (
+                    <>
+                      <dt>Referencia OXXO</dt>
+                      <dd class="pago-datos__numero">{enGrupos(pago.oxxo.referencia)}</dd>
+                      <dt>Ficha vence</dt>
+                      <dd>{fechaHora(pago.oxxo.expiraEn)}</dd>
+                    </>
+                  )}
+                  {pago.spei && (
+                    <>
+                      <dt>CLABE</dt>
+                      <dd class="pago-datos__numero">{enGrupos(pago.spei.clabe)}</dd>
+                      {pedido.estado === "pendiente" && (
+                        <>
+                          <dt>Falta por recibir</dt>
+                          <dd>{dinero(pago.spei.montoRestante ?? pago.monto)}</dd>
+                        </>
+                      )}
+                    </>
+                  )}
+                  {pago.link?.url && (
+                    <>
+                      <dt>Link de pago</dt>
+                      <dd>
+                        <a href={pago.link.url} target="_blank" rel="noopener">
+                          Abrir link
+                        </a>{" "}
+                        · vence {fechaHora(pago.link.expiraEn)}
+                      </dd>
+                    </>
+                  )}
+                  {pago.stripePaymentIntentId && (
+                    <>
+                      <dt>Cobro en Stripe</dt>
+                      <dd>
+                        <a href={stripeBase + pago.stripePaymentIntentId} target="_blank" rel="noopener">
+                          {pago.stripePaymentIntentId}
+                        </a>
+                      </dd>
+                    </>
+                  )}
+                </dl>
+              )}
+            </div>
+          </div>
+
+          <div class="panel-card">
+            <h3>Acciones</h3>
+            <div class="acciones-admin">
+              {acciones.enviar && (
+                <form method="post" action={accionUrl}>
+                  <input type="hidden" name="accion" value="enviado" />
+                  <button class="btn btn--primario" type="submit">Marcar como enviado</button>
+                </form>
+              )}
+              {acciones.entregar && (
+                <form method="post" action={accionUrl}>
+                  <input type="hidden" name="accion" value="entregado" />
+                  <button class="btn btn--primario" type="submit">Marcar como entregado</button>
+                </form>
+              )}
+              {acciones.sincronizar && (
+                <form method="post" action={accionUrl}>
+                  <input type="hidden" name="accion" value="sincronizar" />
+                  <button class="btn" type="submit">Revisar con Stripe</button>
+                </form>
+              )}
+              {acciones.cancelar && (
+                <form method="post" action={accionUrl} onsubmit="return confirm('¿Cancelar el pedido? Ya no se podrá pagar.')">
+                  <input type="hidden" name="accion" value="cancelar" />
+                  <button class="btn btn--peligro" type="submit">Cancelar pedido</button>
+                </form>
+              )}
+              {acciones.reembolsar && (
+                <form
+                  method="post"
+                  action={accionUrl}
+                  class="acciones-admin__reembolso"
+                  onsubmit="return confirm('¿Reembolsar el pago completo? Esto no se puede deshacer.')"
+                >
+                  <input type="hidden" name="accion" value="reembolsar" />
+                  <label>
+                    <input type="checkbox" name="reponerStock" checked /> Regresar los productos al inventario
+                  </label>
+                  <button class="btn btn--peligro" type="submit">
+                    Reembolsar {dinero(pedido.total)}
+                  </button>
+                </form>
+              )}
+              {!Object.values(acciones).some(Boolean) && (
+                <p class="muted">No hay acciones disponibles para este pedido.</p>
+              )}
+            </div>
+            {pagado && pago && !conTarjeta && (
+              <p class="muted acciones-admin__nota">
+                Los pagos en OXXO o SPEI no se pueden reembolsar desde aquí: Stripe no lo permite para OXXO, y
+                SPEI necesita la cuenta bancaria del cliente (se hace desde el Dashboard de Stripe).
+              </p>
+            )}
+          </div>
+
+          <div class="panel-card">
+            <h3>Productos</h3>
+            <div class="tabla-scroll">
+              <table class="tabla">
+                <thead>
+                  <tr>
+                    <th scope="col">Producto</th>
+                    <th scope="col" class="num">Precio</th>
+                    <th scope="col" class="num">Cantidad</th>
+                    <th scope="col" class="num">Subtotal</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {pedido.detalles.map((d: any) => (
+                    <tr>
+                      <td>
+                        <a href={`/admin/productos/${d.producto.id}`}>{d.producto.nombre}</a>
+                      </td>
+                      <td class="num">{dinero(d.precioUnitario)}</td>
+                      <td class="num">{d.cantidad}</td>
+                      <td class="num">{dinero(d.subtotal)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+                <tfoot>
+                  <tr>
+                    <th scope="row" colspan="3">Total</th>
+                    <td class="num">
+                      <strong>{dinero(pedido.total)}</strong>
+                    </td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          </div>
+        </>
+      )
+    }
+  </section>
+</Layout>

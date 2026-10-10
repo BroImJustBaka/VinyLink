@@ -1,0 +1,36 @@
+---
+// Tarjeta de indicador del tablero: nombre, valor y, opcionalmente, cuánto
+// cambió contra el periodo anterior (con flecha, no solo color).
+interface Props {
+  etiqueta: string;
+  valor: string;
+  actual?: number;
+  anterior?: number;
+  nota?: string;
+}
+
+const { etiqueta, valor, actual, anterior, nota } = Astro.props;
+
+let cambio: { texto: string; clase: string } | null = null;
+if (actual !== undefined && anterior !== undefined) {
+  if (anterior === 0) {
+    cambio = actual > 0 ? { texto: "Nuevo vs. periodo anterior", clase: "kpi__cambio--sube" } : null;
+  } else {
+    const pct = Math.round(((actual - anterior) / anterior) * 100);
+    cambio =
+      pct === 0
+        ? { texto: "= igual que el periodo anterior", clase: "" }
+        : {
+            texto: `${pct > 0 ? "▲" : "▼"} ${Math.abs(pct)}% vs. periodo anterior`,
+            clase: pct > 0 ? "kpi__cambio--sube" : "kpi__cambio--baja",
+          };
+  }
+}
+---
+
+<div class="kpi">
+  <span class="kpi__etiqueta">{etiqueta}</span>
+  <strong class="kpi__valor">{valor}</strong>
+  {cambio && <span class:list={["kpi__cambio", cambio.clase]}>{cambio.texto}</span>}
+  {nota && <span class="kpi__nota">{nota}</span>}
+</div>

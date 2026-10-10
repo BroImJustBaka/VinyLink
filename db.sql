@@ -57,7 +57,7 @@ CREATE INDEX IF NOT EXISTS sesion_usuario_idx ON sesion(usuario_id);
 CREATE TABLE IF NOT EXISTS pedido (
   id         SERIAL PRIMARY KEY,
   fecha      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  estado     TEXT NOT NULL DEFAULT 'confirmado',
+  estado     TEXT NOT NULL DEFAULT 'pendiente', -- ver la migración de pagos al final
   total      DOUBLE PRECISION NOT NULL CHECK (total >= 0),
   usuario_id INTEGER NOT NULL REFERENCES usuario(id)
     ON DELETE RESTRICT ON UPDATE CASCADE
@@ -140,3 +140,58 @@ UPDATE usuario
 UPDATE usuario
    SET password = '$2b$10$YVA5OCH3SINArNsgdaxOrOXDs6qut7ZcbRxJRilR1tiZfyBLAI03G'
  WHERE email = 'admin@tienda.com' AND password = 'admin123';
+
+-- ============================================================
+-- Panel de administración y pagos con Stripe
+-- Migración idempotente: cada sentencia solo agrega lo que falta, así
+-- que se puede correr en cada arranque igual que el resto del archivo.
+-- ============================================================
+
+-- Usuario: fecha de alta (para "clientes nuevos" en el panel) y su
+-- Customer de Stripe (SPEI lo necesita para darle una CLABE propia).
+ALTER TABLE usuario ADD COLUMN IF NOT EXISTS creado_en TIMESTAMPTZ NOT NULL DEFAULT NOW();
+ALTER TABLE usuario ADD COLUMN IF NOT EXISTS stripe_customer_id TEXT UNIQUE;
+
+-- Pedido: nace "pendiente" y pasa a "pagado" cuando Stripe confirma el cobro.
+--   pendiente → pagado → enviado → entregado
+--   pendiente → cancelado      (pago rechazado, vencido o cancelado)
+--   pagado/enviado/entregado → reembolsado
+ALTER TABLE pedido ADD COLUMN IF NOT EXISTS metodo_pago TEXT;
+ALTER TABLE pedido ADD COLUMN IF NOT EXISTS pagado_en TIMESTAMPTZ;
+ALTER TABLE pedido ADD COLUMN IF NOT EXISTS nota TEXT;
+ALTER TABLE pedido ALTER COLUMN estado SET DEFAULT 'pendiente';
+-- Los pedidos de antes de los pagos en línea ("confirmado") cuentan como pagados.
+UPDATE pedido SET estado = 'pagado', pagado_en = fecha WHERE estado = 'confirmado';
+ALTER TABLE pedido DROP CONSTRAINT IF EXISTS pedido_estado_check;
+ALTER TABLE pedido ADD CONSTRAINT pedido_estado_check
+  CHECK (estado IN ('pendiente', 'pagado', 'enviado', 'entregado', 'cancelado', 'reembolsado'));
+ALTER TABLE pedido DROP CONSTRAINT IF EXISTS pedido_metodo_pago_check;
+ALTER TABLE pedido ADD CONSTRAINT pedido_metodo_pago_check
+  CHECK (metodo_pago IS NULL OR metodo_pago IN ('credito', 'debito', 'oxxo', 'spei', 'link'));
+CREATE INDEX IF NOT EXISTS pedido_usuario_idx ON pedido(usuario_id);
+CREATE INDEX IF NOT EXISTS pedido_estado_idx ON pedido(estado);
+CREATE INDEX IF NOT EXISTS detalle_pedido_pedido_idx ON detalle_pedido(pedido_id);
+
+-- ------------------------------------------------------------
+-- Pago (1) ── (1) Pedido — el cobro en Stripe de cada pedido.
+-- `detalle` guarda lo que se le muestra al cliente según el método:
+-- ficha OXXO, CLABE de SPEI, URL del link de pago o la tarjeta usada.
+-- ------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS pago (
+  id                         SERIAL PRIMARY KEY,
+  pedido_id                  INTEGER NOT NULL UNIQUE REFERENCES pedido(id)
+    ON DELETE CASCADE ON UPDATE CASCADE,
+  metodo                     TEXT NOT NULL
+    CHECK (metodo IN ('credito', 'debito', 'oxxo', 'spei', 'link')),
+  estado                     TEXT NOT NULL DEFAULT 'pendiente'
+    CHECK (estado IN ('pendiente', 'requiere_accion', 'pagado', 'fallido', 'cancelado', 'reembolsado')),
+  monto_centavos             INTEGER NOT NULL CHECK (monto_centavos > 0),
+  stripe_payment_intent_id   TEXT UNIQUE,
+  stripe_checkout_session_id TEXT UNIQUE,
+  stripe_reembolso_id        TEXT,
+  detalle                    JSONB NOT NULL DEFAULT '{}'::jsonb,
+  error                      TEXT,
+  creado_en                  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  actualizado_en             TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS pago_estado_idx ON pago(estado);

@@ -1,0 +1,182 @@
+---
+// Bloque de /pedido/[id] que explica cómo va el pago: la ficha OXXO, la
+// CLABE para SPEI, el link de pago o la tarjeta con la que se cobró.
+import { dinero, fechaHora, enGrupos, MARCAS_TARJETA } from "../../lib/formato.js";
+
+interface Props {
+  pedido: {
+    estado: string;
+    total: number;
+    metodoPago: string | null;
+    pago: null | {
+      estado: string;
+      error: string | null;
+      meses: number | null;
+      tarjeta: { marca: string; ultimos4: string; fondos: string | null } | null;
+      oxxo: { referencia: string; urlFicha: string; expiraEn: string } | null;
+      spei: {
+        clabe: string;
+        banco: string;
+        referencia: string;
+        montoRestante: number | null;
+        urlInstrucciones: string;
+      } | null;
+      link: { url: string; expiraEn: string } | null;
+    };
+  };
+}
+
+const { pedido } = Astro.props;
+const pago = pedido.pago;
+const pendiente = pedido.estado === "pendiente";
+const pagado = ["pagado", "enviado", "entregado"].includes(pedido.estado);
+
+const tarjeta = pago?.tarjeta
+  ? `${MARCAS_TARJETA[pago.tarjeta.marca as keyof typeof MARCAS_TARJETA] ?? pago.tarjeta.marca} •••• ${pago.tarjeta.ultimos4}`
+  : null;
+const whatsapp = pago?.link?.url
+  ? `https://wa.me/?text=${encodeURIComponent(`Paga mi pedido de VinyLink aquí: ${pago.link.url}`)}`
+  : null;
+---
+
+{
+  pagado && (
+    <div class="confirmacion-box">
+      <span>
+        ✅ ¡Pago recibido!
+        {tarjeta && ` Pagaste con ${tarjeta}`}
+        {pago?.meses && ` a ${pago.meses} meses sin intereses`}
+        {!tarjeta && pedido.metodoPago === "oxxo" && " Pagaste en efectivo en OXXO."}
+        {!tarjeta && pedido.metodoPago === "spei" && " Recibimos tu transferencia SPEI."}
+      </span>
+    </div>
+  )
+}
+
+{
+  pedido.estado === "cancelado" && (
+    <div class="error-box">
+      <p>
+        Este pedido se canceló y no se cobró. {pago?.error}
+      </p>
+    </div>
+  )
+}
+
+{
+  pedido.estado === "reembolsado" && (
+    <div class="aviso-info">
+      <p>Te devolvimos el dinero de este pedido. Puede tardar unos días en reflejarse en tu tarjeta.</p>
+    </div>
+  )
+}
+
+{
+  pendiente && pago?.oxxo && (
+    <section class="pago-panel">
+      <h3>Paga en cualquier OXXO</h3>
+      <p class="muted">Muestra esta referencia en caja y paga en efectivo. El pedido se confirma solo.</p>
+      <dl class="pago-datos">
+        <div>
+          <dt>Referencia</dt>
+          <dd class="pago-datos__numero">{enGrupos(pago.oxxo.referencia)}</dd>
+        </div>
+        <div>
+          <dt>Monto a pagar</dt>
+          <dd>{dinero(pedido.total)}</dd>
+        </div>
+        <div>
+          <dt>Vence</dt>
+          <dd>{fechaHora(pago.oxxo.expiraEn)}</dd>
+        </div>
+      </dl>
+      <div class="pago-panel__acciones">
+        <a class="btn btn--primario" href={pago.oxxo.urlFicha} target="_blank" rel="noopener">
+          Ver ficha con código de barras
+        </a>
+        <button class="btn" type="button" data-copiar={pago.oxxo.referencia}>Copiar referencia</button>
+      </div>
+      <ol class="pago-instrucciones">
+        <li>Entrega la ficha (o dicta la referencia) al cajero de cualquier OXXO.</li>
+        <li>Paga el monto exacto en efectivo.</li>
+        <li>Guarda tu recibo. Te avisamos aquí en cuanto OXXO confirme el pago.</li>
+      </ol>
+    </section>
+  )
+}
+
+{
+  pendiente && pago?.spei && (
+    <section class="pago-panel">
+      <h3>Transfiere por SPEI</h3>
+      <p class="muted">
+        Desde la app de tu banco, haz una transferencia con estos datos. El pedido se confirma solo en
+        cuanto llega el dinero.
+      </p>
+      <dl class="pago-datos">
+        <div>
+          <dt>CLABE</dt>
+          <dd class="pago-datos__numero">{enGrupos(pago.spei.clabe)}</dd>
+        </div>
+        <div>
+          <dt>Banco</dt>
+          <dd>{pago.spei.banco}</dd>
+        </div>
+        <div>
+          <dt>Monto exacto</dt>
+          <dd>{dinero(pago.spei.montoRestante ?? pedido.total)}</dd>
+        </div>
+        {pago.spei.referencia && (
+          <div>
+            <dt>Referencia / concepto</dt>
+            <dd>{pago.spei.referencia}</dd>
+          </div>
+        )}
+      </dl>
+      <div class="pago-panel__acciones">
+        <button class="btn btn--primario" type="button" data-copiar={pago.spei.clabe}>Copiar CLABE</button>
+        {pago.spei.urlInstrucciones && (
+          <a class="btn" href={pago.spei.urlInstrucciones} target="_blank" rel="noopener">
+            Ver instrucciones
+          </a>
+        )}
+      </div>
+    </section>
+  )
+}
+
+{
+  pendiente && pago?.link && (
+    <section class="pago-panel">
+      <h3>Tu link de pago</h3>
+      <p class="muted">
+        Ábrelo para pagar ahora o compártelo con quien vaya a pagar. Acepta tarjeta u OXXO.
+        Vence: {fechaHora(pago.link.expiraEn)}
+      </p>
+      <p class="pago-link">
+        <input type="text" readonly value={pago.link.url} aria-label="Link de pago" />
+      </p>
+      <div class="pago-panel__acciones">
+        <a class="btn btn--primario" href={pago.link.url}>Pagar ahora</a>
+        <button class="btn" type="button" data-copiar={pago.link.url}>Copiar link</button>
+        {whatsapp && (
+          <a class="btn" href={whatsapp} target="_blank" rel="noopener">
+            Compartir por WhatsApp
+          </a>
+        )}
+      </div>
+    </section>
+  )
+}
+
+{
+  pendiente && pago && !pago.oxxo && !pago.spei && !pago.link && (
+    <div class="aviso-info">
+      <p>Estamos confirmando tu pago con el banco. Esta página se actualiza sola.</p>
+    </div>
+  )
+}
+
+<script>
+  import "../../scripts/copiar.ts";
+</script>

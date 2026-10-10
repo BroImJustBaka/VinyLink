@@ -7,7 +7,12 @@ import { SESSION_COOKIE, graphqlServer } from "./lib/graphql";
 import { QUERY_ME } from "./lib/queries/auth.js";
 
 // Rutas que exigen sesión (incluye subrutas: /checkout/algo).
-const PROTEGIDAS = ["/perfil", "/checkout", "/pedido"];
+const PROTEGIDAS = ["/perfil", "/checkout", "/pedido", "/admin"];
+// Rutas que además exigen rol ADMIN.
+const SOLO_ADMIN = ["/admin"];
+
+const coincide = (pathname: string, rutas: string[]) =>
+  rutas.some((p) => pathname === p || pathname.startsWith(`${p}/`));
 
 export const onRequest = defineMiddleware(async (context, next) => {
   context.locals.user = null;
@@ -28,9 +33,13 @@ export const onRequest = defineMiddleware(async (context, next) => {
   }
 
   const { pathname, search } = context.url;
-  const protegida = PROTEGIDAS.some((p) => pathname === p || pathname.startsWith(`${p}/`));
-  if (protegida && !context.locals.user) {
+  if (coincide(pathname, PROTEGIDAS) && !context.locals.user) {
     return context.redirect(`/login?next=${encodeURIComponent(pathname + search)}`);
+  }
+  // Un cliente que abre /admin ve un 404: no se revela que el panel existe.
+  // (El backend igual rechaza cada operación con requireAdmin.)
+  if (coincide(pathname, SOLO_ADMIN) && context.locals.user?.rol !== "ADMIN") {
+    return context.rewrite("/404");
   }
 
   return next();

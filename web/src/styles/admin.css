@@ -1,0 +1,595 @@
+/* ============================================================
+   Panel de administración (/admin). Se importa desde AdminNav.astro,
+   así que solo se carga en las páginas del panel.
+   ============================================================ */
+
+:root {
+  /* Color de los datos en las gráficas (terracota de la marca). Se validó
+     contra el fondo --paper: contraste ≥ 3:1 y saturación suficiente. */
+  --dato: #b65f45;
+  --dato-hover: #9c4f38;
+}
+
+.admin {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+.admin h2 {
+  margin: 0;
+}
+.admin__cabecera {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.admin__cabecera .muted {
+  margin-top: 4px;
+}
+.admin__fila {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 20px;
+  align-items: start;
+}
+.admin__fila--asimetrica {
+  grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
+}
+
+/* --- Tarjetas --- */
+.panel-card,
+.grafica {
+  background: var(--paper);
+  border: 1px solid var(--carbon-a10);
+  border-radius: 10px;
+  padding: 18px 20px;
+  margin: 0;
+  min-width: 0;
+}
+.panel-card h3,
+.grafica h3 {
+  font-size: 1.2rem;
+  margin: 0 0 10px;
+}
+.panel-card__cabecera {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+}
+
+/* --- Selector de periodo / categoría --- */
+.periodos {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.periodos__opcion {
+  padding: 6px 14px;
+  border: 1px solid var(--carbon-a20);
+  border-radius: 999px;
+  font-size: 0.88rem;
+  text-decoration: none;
+  background: var(--paper);
+}
+.periodos__opcion:hover {
+  border-color: var(--carbon-a45);
+}
+.periodos__opcion--activa {
+  background: var(--carbon);
+  border-color: var(--carbon);
+  color: var(--paper);
+  font-weight: 600;
+}
+
+/* --- Indicadores (KPI) --- */
+.kpis {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+.kpi {
+  background: var(--paper);
+  border: 1px solid var(--carbon-a10);
+  border-radius: 10px;
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.kpi__etiqueta {
+  font-size: 0.8rem;
+  color: var(--wood);
+  font-weight: 600;
+}
+/* Cifra grande en la misma sans que el resto (no en la serif de títulos). */
+.kpi__valor {
+  font-size: 1.6rem;
+  font-weight: 600;
+  line-height: 1.15;
+  color: var(--carbon);
+}
+.kpi__cambio,
+.kpi__nota {
+  font-size: 0.78rem;
+  color: var(--wood);
+}
+.kpi__cambio--sube {
+  color: #4a5a2e;
+}
+.kpi__cambio--baja {
+  color: var(--terracotta-text);
+}
+
+/* --- Gráficas --- */
+.grafica__titulo .muted {
+  margin-top: -6px;
+}
+.grafica__vacio {
+  margin: 20px 0 6px;
+  padding: 24px;
+  text-align: center;
+  color: var(--wood);
+  background: var(--cream);
+  border-radius: 8px;
+  font-size: 0.92rem;
+}
+.grafica__tabla {
+  margin-top: 12px;
+  font-size: 0.85rem;
+}
+.grafica__tabla summary {
+  cursor: pointer;
+  color: var(--terracotta-text);
+  width: fit-content;
+}
+
+/* Barras horizontales: el nombre arriba y debajo la barra con su valor en
+   la punta, así la barra usa todo el ancho de la tarjeta. */
+.barras {
+  list-style: none;
+  padding: 0;
+  margin: 14px 0 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.barras__fila {
+  display: grid;
+  gap: 4px;
+  padding: 6px 6px;
+  border-radius: 6px;
+  cursor: default;
+}
+.barras__fila:hover,
+.barras__fila:focus-visible {
+  background: var(--cream);
+}
+.barras__fila:focus-visible {
+  outline: 2px solid var(--terracotta);
+  outline-offset: 0;
+}
+.barras__etiqueta {
+  font-size: 0.88rem;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+.barras__pista {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+/* Largo = proporción (--p, de 0 a 1) del espacio que deja libre la etiqueta del valor. */
+.barras__barra {
+  flex: none;
+  height: 18px;
+  width: calc((100% - 6.5rem) * var(--p));
+  min-width: 2px;
+  background: var(--dato);
+  border-radius: 0 4px 4px 0; /* punta redondeada, base recta */
+}
+.barras__fila:hover .barras__barra,
+.barras__fila:focus-visible .barras__barra {
+  background: var(--dato-hover);
+}
+.barras__valor {
+  font-size: 0.85rem;
+  font-weight: 600;
+  white-space: nowrap;
+  color: var(--carbon);
+}
+
+/* Columnas por día: eje Y | área con guías y columnas; eje X abajo. */
+.columnas {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-rows: 200px auto;
+  column-gap: 10px;
+  margin-top: 26px;
+}
+.columnas__eje-y {
+  position: relative;
+  min-width: 3.5rem;
+}
+.columnas__eje-y span {
+  position: absolute;
+  right: 0;
+  bottom: calc(var(--y) * 100%);
+  transform: translateY(50%);
+  font-size: 0.72rem;
+  color: var(--wood);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.columnas__plot {
+  position: relative;
+  border-bottom: 1px solid var(--carbon-a20);
+}
+.columnas__guia {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: calc(var(--y) * 100%);
+  border-top: 1px solid var(--carbon-a10);
+}
+.columnas__barras {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: flex-end;
+}
+/* La banda completa (alta y del ancho del día) es el área del tooltip. */
+.columnas__banda {
+  position: relative;
+  flex: 1 1 0;
+  height: 100%;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  min-width: 0;
+}
+.columnas__banda:hover,
+.columnas__banda:focus-visible {
+  background: rgba(36, 35, 33, 0.04);
+}
+.columnas__banda:focus-visible {
+  outline: 2px solid var(--terracotta);
+  outline-offset: -2px;
+}
+.columnas__barra {
+  width: min(24px, calc(100% - 2px)); /* máximo 24 px y 2 px de aire entre columnas */
+  height: calc(var(--y) * 100%);
+  background: var(--dato);
+  border-radius: 4px 4px 0 0;
+}
+.columnas__banda:hover .columnas__barra,
+.columnas__banda:focus-visible .columnas__barra {
+  background: var(--dato-hover);
+}
+.columnas__maximo {
+  position: absolute;
+  left: 50%;
+  bottom: calc(var(--y) * 100% + 4px);
+  transform: translateX(-50%);
+  font-size: 0.75rem;
+  font-weight: 600;
+  white-space: nowrap;
+  color: var(--carbon);
+  pointer-events: none;
+}
+.columnas__maximo--inicio {
+  left: 0;
+  transform: none;
+}
+.columnas__maximo--fin {
+  left: auto;
+  right: 0;
+  transform: none;
+}
+.columnas__eje-x {
+  grid-column: 2;
+  display: flex;
+  padding-top: 6px;
+}
+.columnas__eje-x span {
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
+  justify-content: center;
+  font-size: 0.72rem;
+  color: var(--wood);
+  white-space: nowrap;
+}
+
+.grafica-tooltip {
+  position: fixed;
+  z-index: 200;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 12px;
+  background: var(--carbon);
+  color: var(--paper);
+  border-radius: 6px;
+  font-size: 0.82rem;
+  pointer-events: none;
+  box-shadow: 0 10px 24px -12px var(--carbon-a45);
+  max-width: 260px;
+}
+.grafica-tooltip strong {
+  font-size: 0.95rem;
+}
+.grafica-tooltip span {
+  color: rgba(255, 253, 248, 0.78);
+}
+.grafica-tooltip[hidden] {
+  display: none;
+}
+
+/* --- Tablas --- */
+.tabla-scroll {
+  overflow-x: auto;
+}
+.tabla {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+.tabla th,
+.tabla td {
+  text-align: left;
+  padding: 10px 8px;
+  border-bottom: 1px solid var(--carbon-a10);
+  vertical-align: middle;
+}
+.tabla thead th {
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--wood);
+}
+.tabla tfoot th,
+.tabla tfoot td {
+  border-bottom: none;
+}
+.tabla .num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.tabla a {
+  font-weight: 600;
+}
+.tabla .fecha {
+  white-space: nowrap;
+}
+.tabla__sub {
+  display: block;
+  font-size: 0.8rem;
+}
+.tabla__producto {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.tabla__producto img {
+  width: 40px;
+  height: 40px;
+  border-radius: 5px;
+  object-fit: cover;
+  flex: none;
+}
+.tabla__acciones {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+.tabla__acciones form {
+  margin: 0;
+}
+
+.stock {
+  font-weight: 600;
+}
+.stock--bajo {
+  color: #6e5414;
+}
+.stock--agotado {
+  color: var(--terracotta-text);
+}
+.lista-stock {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+.lista-stock li {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--carbon-a10);
+  font-size: 0.9rem;
+}
+
+/* --- Filtros --- */
+.filtros {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 12px;
+}
+.filtros label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--wood);
+}
+.filtros select,
+.filtros input,
+.form-rol select,
+.formulario-link select,
+.formulario-link input {
+  padding: 8px 10px;
+  border: 1px solid var(--carbon-a20);
+  border-radius: 6px;
+  background: var(--paper);
+  font-family: var(--font-sans);
+  font-size: 0.9rem;
+  color: var(--carbon);
+}
+.filtros__buscar {
+  flex: 1;
+  min-width: 180px;
+}
+
+.paginacion {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+/* --- Detalle del pedido --- */
+.datos {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 8px 16px;
+  margin: 0;
+  font-size: 0.92rem;
+}
+.datos dt {
+  color: var(--wood);
+}
+.datos dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.acciones-admin {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+.acciones-admin form {
+  margin: 0;
+}
+.acciones-admin__reembolso {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border: 1px solid var(--carbon-a10);
+  border-radius: 8px;
+}
+.acciones-admin__reembolso label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.88rem;
+}
+.acciones-admin__nota {
+  margin-top: 12px;
+}
+
+/* --- Formularios del panel --- */
+.formulario-producto {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 220px;
+  gap: 28px;
+  align-items: start;
+}
+.formulario-admin {
+  max-width: 520px;
+  margin-top: 0;
+}
+.formulario-admin__par {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+.formulario-producto__vista {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.formulario-producto__vista img {
+  width: 100%;
+  aspect-ratio: 1;
+  object-fit: cover;
+  border-radius: 8px;
+  border: 1px solid var(--carbon-a10);
+  background: var(--cream);
+}
+/* Sin URL todavía: un recuadro vacío en lugar de un ícono roto. */
+.formulario-producto__vista img:not([src]) {
+  border-style: dashed;
+  border-color: var(--carbon-a20);
+}
+.form-rol {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+.formulario-link {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  max-width: 640px;
+}
+.formulario-link label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--wood);
+}
+.formulario-link__productos {
+  border: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.formulario-link__productos legend {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--wood);
+  padding: 0;
+  margin-bottom: 6px;
+}
+.formulario-link__renglon {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 80px;
+  gap: 8px;
+}
+.formulario-link button {
+  align-self: flex-start;
+}
+
+@media (max-width: 900px) {
+  .admin__fila,
+  .admin__fila--asimetrica,
+  .formulario-producto {
+    grid-template-columns: 1fr;
+  }
+  .formulario-producto__vista {
+    max-width: 200px;
+  }
+}
+@media (max-width: 560px) {
+  .kpis {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .columnas__x--secundaria {
+    visibility: hidden;
+  }
+}

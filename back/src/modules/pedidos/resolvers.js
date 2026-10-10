@@ -2,11 +2,13 @@
 //
 // Todo requiere sesión: el usuario sale de `context.user` (lo llena el módulo
 // auth). Para probar sin auth: AUTH_USUARIO_FALSO=1 en back/.env.
+//
+// Crear un pedido ahora es parte de pagar: la mutación `crearPedido` vive en
+// el módulo pagos y usa el inventario de ./servicio.js.
 import { pool } from "../../db.js";
-import { one, many, mapProducto, mapPedido } from "../../lib/sql.js";
+import { one, many, iso, mapProducto, mapPedido } from "../../lib/sql.js";
 import { requireUser, requireAdmin } from "../auth/context.js";
-
-const ES_ID = /^\d+$/;
+import { ES_ID, validarCantidad } from "./servicio.js";
 
 // Obtiene el carrito del usuario; si no tiene uno, lo crea vacío.
 async function obtenerOcrearCarrito(usuarioId) {
@@ -20,28 +22,11 @@ async function obtenerOcrearCarrito(usuarioId) {
 const productoPorId = async (id) =>
   mapProducto(await one("SELECT * FROM producto WHERE id = $1", [id]));
 
-function validarCantidad(cantidad) {
-  if (!Number.isInteger(cantidad) || cantidad < 1) {
-    throw new Error("La cantidad debe ser un entero mayor a 0");
-  }
-}
-
 async function productoOError(productoId) {
   if (!ES_ID.test(String(productoId))) throw new Error(`No existe el producto con id ${productoId}`);
   const producto = await one("SELECT * FROM producto WHERE id = $1", [productoId]);
   if (!producto) throw new Error(`No existe el producto con id ${productoId}`);
   return producto;
-}
-
-// Junta renglones repetidos del mismo producto (suma sus cantidades).
-function agruparItems(items) {
-  const mapa = new Map();
-  for (const { productoId, cantidad } of items) {
-    validarCantidad(cantidad);
-    const clave = String(productoId);
-    mapa.set(clave, (mapa.get(clave) ?? 0) + cantidad);
-  }
-  return [...mapa].map(([productoId, cantidad]) => ({ productoId, cantidad }));
 }
 
 export const resolvers = {
@@ -74,7 +59,7 @@ export const resolvers = {
 
   Pedido: {
     // pg regresa Date; el schema espera String (ISO 8601).
-    fecha: (padre) => (padre.fecha instanceof Date ? padre.fecha.toISOString() : padre.fecha),
+    fecha: (padre) => iso(padre.fecha),
     usuario: (padre) => one("SELECT * FROM usuario WHERE id = $1", [padre.usuarioId]),
     detalles: (padre) =>
       many("SELECT * FROM detalle_pedido WHERE pedido_id = $1 ORDER BY id", [padre.id]),
@@ -83,7 +68,8 @@ export const resolvers = {
   DetallePedido: {
     producto: (padre) => productoPorId(padre.producto_id),
     precioUnitario: (padre) => padre.precio_unitario,
-    subtotal: (padre) => padre.cantidad * padre.precio_unitario,
+    // Redondeado a centavos: 3 × 899.99 daría 2699.9700000000003.
+    subtotal: (padre) => Math.round(padre.cantidad * padre.precio_unitario * 100) / 100,
   },
 
   Carrito: {
@@ -107,73 +93,6 @@ export const resolvers = {
   },
 
   Mutation: {
-    crearPedido: async (_padre, { data }, context) => {
-      const user = requireUser(context);
-      if (!data.items || data.items.length === 0) {
-        throw new Error("El pedido necesita al menos un producto");
-      }
-      const items = agruparItems(data.items);
-
-      const client = await pool.connect();
-      try {
-        await client.query("BEGIN");
-
-        // Bloquea los productos (en orden de id, para evitar interbloqueos) y
-        // valida el stock de todos los renglones ANTES de escribir nada.
-        const renglones = [];
-        const ordenados = [...items].sort((a, b) => Number(a.productoId) - Number(b.productoId));
-        for (const { productoId, cantidad } of ordenados) {
-          if (!ES_ID.test(String(productoId))) {
-            throw new Error(`No existe el producto con id ${productoId}`);
-          }
-          const { rows } = await client.query(
-            "SELECT * FROM producto WHERE id = $1 FOR UPDATE",
-            [productoId]
-          );
-          const producto = rows[0];
-          if (!producto) throw new Error(`No existe el producto con id ${productoId}`);
-          if (producto.stock < cantidad) {
-            throw new Error(`Stock insuficiente para "${producto.nombre}"`);
-          }
-          renglones.push({ producto, cantidad });
-        }
-
-        const total = renglones.reduce((acc, r) => acc + r.cantidad * r.producto.precio, 0);
-
-        const { rows: pedidoRows } = await client.query(
-          "INSERT INTO pedido (total, usuario_id) VALUES ($1, $2) RETURNING *",
-          [total, user.id]
-        );
-        const pedido = pedidoRows[0];
-
-        for (const { producto, cantidad } of renglones) {
-          await client.query(
-            `INSERT INTO detalle_pedido (pedido_id, producto_id, cantidad, precio_unitario)
-             VALUES ($1, $2, $3, $4)`,
-            [pedido.id, producto.id, cantidad, producto.precio]
-          );
-          await client.query("UPDATE producto SET stock = stock - $1 WHERE id = $2", [
-            cantidad,
-            producto.id,
-          ]);
-        }
-
-        // El pedido ya "consumió" el carrito guardado en DB.
-        await client.query(
-          "DELETE FROM detalle_carrito WHERE carrito_id IN (SELECT id FROM carrito WHERE usuario_id = $1)",
-          [user.id]
-        );
-
-        await client.query("COMMIT");
-        return mapPedido(pedido);
-      } catch (err) {
-        await client.query("ROLLBACK");
-        throw err;
-      } finally {
-        client.release();
-      }
-    },
-
     agregarAlCarrito: async (_padre, { productoId, cantidad }, context) => {
       const user = requireUser(context);
       validarCantidad(cantidad);

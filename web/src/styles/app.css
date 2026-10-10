@@ -749,3 +749,342 @@ a.btn:not(.btn--link) {
     flex-basis: 100%;
   }
 }
+
+/* ============================================================
+   Pagos: checkout, página del pedido y estados
+   ============================================================ */
+
+/* Texto solo para lectores de pantalla. */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* --- Variantes de botón --- */
+.btn--chico {
+  padding: 6px 12px;
+  font-size: 0.85rem;
+}
+.btn--grande {
+  padding: 12px 22px;
+  font-size: 1rem;
+  font-weight: 600;
+}
+.btn--peligro {
+  color: #8a4229;
+  border-color: rgba(182, 95, 69, 0.45);
+}
+.btn--peligro:hover:not(:disabled) {
+  background: #f3e6e0;
+  border-color: #8a4229;
+}
+a.topbar__admin {
+  border-color: var(--terracotta);
+  color: var(--terracotta-text);
+  font-weight: 600;
+}
+
+/* --- Avisos --- */
+.aviso-info {
+  background: #f6efd9;
+  border: 1px solid rgba(208, 168, 75, 0.55);
+  color: #5c4a1c;
+  padding: 10px 14px;
+  border-radius: 8px;
+  margin: 14px 0;
+  font-size: 0.92rem;
+}
+.aviso-info {
+  background: #eef0e7;
+  border-color: rgba(89, 96, 74, 0.3);
+  color: var(--olive);
+}
+.aviso-info p,
+.error-box p {
+  margin: 0;
+}
+
+/* --- Etiqueta de estado (pedido) --- */
+.estado {
+  display: inline-block;
+  padding: 2px 10px;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  white-space: nowrap;
+  border: 1px solid transparent;
+}
+.estado--pendiente {
+  background: #f6efd9;
+  color: #6e5414;
+  border-color: rgba(208, 168, 75, 0.5);
+}
+.estado--pagado {
+  background: #e6ecdc;
+  color: #3f4a2c;
+  border-color: rgba(89, 96, 74, 0.35);
+}
+.estado--enviado,
+.estado--entregado {
+  background: #e3e9ee;
+  color: #2f4454;
+  border-color: rgba(47, 68, 84, 0.25);
+}
+.estado--cancelado,
+.estado--reembolsado {
+  background: #f1ebe6;
+  color: #6b5446;
+  border-color: var(--carbon-a10);
+}
+
+/* --- Checkout --- */
+.checkout__columnas {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 300px;
+  gap: 32px;
+  align-items: start;
+  margin-top: 18px;
+}
+.checkout__resumen {
+  background: var(--paper);
+  border: 1px solid var(--carbon-a10);
+  border-radius: 10px;
+  padding: 18px 20px;
+  position: sticky;
+  top: 90px;
+}
+.checkout__resumen h3 {
+  margin: 0 0 10px;
+  font-size: 1.25rem;
+}
+.checkout__resumen ul {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 0.9rem;
+}
+.checkout__resumen li,
+.checkout__total {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+.checkout__resumen li span:last-child {
+  white-space: nowrap;
+}
+.checkout__total {
+  border-top: 1px solid var(--carbon-a10);
+  padding-top: 12px;
+  margin: 0 0 12px;
+  font-size: 1.1rem;
+}
+
+.metodos {
+  border: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.metodos legend {
+  font-weight: 600;
+  margin-bottom: 10px;
+  padding: 0;
+}
+.metodo {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px 14px;
+  background: var(--paper);
+  border: 1px solid var(--carbon-a20);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: border-color 0.15s ease-out, box-shadow 0.15s ease-out;
+}
+.metodo:hover {
+  border-color: var(--carbon-a45);
+}
+.metodo input {
+  margin-top: 4px;
+  accent-color: var(--olive);
+}
+.metodo:has(input:focus-visible) {
+  outline: 2px solid var(--terracotta);
+  outline-offset: 2px;
+}
+.metodo--activo {
+  border-color: var(--olive);
+  box-shadow: inset 0 0 0 1px var(--olive);
+}
+.metodo--bloqueado {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+.metodo__texto {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.metodo-panel {
+  margin-top: 18px;
+}
+.metodo-panel__texto {
+  margin: 0;
+  color: var(--carbon);
+  line-height: 1.5;
+}
+.checkout-form--ancho {
+  max-width: 520px;
+}
+.checkout-form textarea,
+.checkout-form select {
+  padding: 10px;
+  border-radius: 6px;
+  border: 1px solid var(--carbon-a20);
+  background: var(--paper);
+  font-family: var(--font-sans);
+  font-size: 0.95rem;
+  color: var(--carbon);
+}
+.checkout-form textarea:focus,
+.checkout-form select:focus {
+  outline: none;
+  border-color: var(--terracotta);
+}
+
+/* --- Página del pedido --- */
+.pedido-view__cabecera {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 8px;
+}
+.pedido-view__cabecera h2 {
+  margin: 0;
+}
+.pedido-view > .muted {
+  margin: 6px 0 16px;
+}
+
+.pago-panel {
+  background: var(--paper);
+  border: 1px solid var(--carbon-a10);
+  border-left: 4px solid var(--mustard);
+  border-radius: 8px;
+  padding: 18px 20px;
+  margin: 16px 0;
+}
+.pago-panel--destacado {
+  border-left-color: var(--olive);
+}
+.pago-panel h3 {
+  margin: 0 0 4px;
+  font-size: 1.3rem;
+}
+.pago-datos {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 14px 24px;
+  margin: 16px 0;
+}
+.pago-datos dt {
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--wood);
+}
+.pago-datos dd {
+  margin: 4px 0 0;
+  font-size: 1.05rem;
+}
+/* La referencia OXXO y la CLABE son largas: ocupan su propio renglón. */
+.pago-datos > div:has(.pago-datos__numero) {
+  grid-column: 1 / -1;
+}
+.pago-datos__numero {
+  font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
+  font-size: 1.1rem;
+  letter-spacing: 0.02em;
+  overflow-wrap: anywhere;
+}
+.pago-panel__acciones {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.pago-instrucciones {
+  margin: 16px 0 0;
+  padding-left: 20px;
+  color: var(--wood);
+  font-size: 0.9rem;
+  line-height: 1.6;
+}
+.pago-link {
+  margin: 12px 0;
+}
+.pago-link input {
+  width: 100%;
+  padding: 10px;
+  border: 1px solid var(--carbon-a20);
+  border-radius: 6px;
+  background: var(--cream);
+  font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
+  font-size: 0.85rem;
+  color: var(--carbon);
+}
+
+.seguimiento {
+  margin: 12px 0;
+}
+.seguimiento__estado {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font-size: 0.9rem;
+  color: var(--wood);
+}
+.seguimiento__punto {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--mustard);
+  animation: latido 1.4s ease-in-out infinite;
+}
+@keyframes latido {
+  50% {
+    opacity: 0.25;
+  }
+}
+.seguimiento__acciones {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 14px;
+  margin-top: 10px;
+}
+
+@media (max-width: 860px) {
+  .checkout__columnas {
+    grid-template-columns: 1fr;
+  }
+  .checkout__resumen {
+    position: static;
+    order: -1;
+  }
+}
