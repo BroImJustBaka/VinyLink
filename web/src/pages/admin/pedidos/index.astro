@@ -1,0 +1,154 @@
+---
+// Panel admin → Pedidos. Filtros por estado, método y búsqueda (número de
+// pedido, nombre o email). Los filtros viajan en la URL (?estado=...), así
+// que el formulario usa GET y cada vista se puede guardar o compartir.
+import Layout from "../../../layouts/Layout.astro";
+import AdminNav from "../../../components/admin/AdminNav.astro";
+import { graphqlServer } from "../../../lib/graphql";
+import { QUERY_ADMIN_PEDIDOS } from "../../../lib/queries/admin.js";
+import { dinero, fechaHora, ESTADOS_PEDIDO, METODOS_PAGO } from "../../../lib/formato.js";
+
+const POR_PAGINA = 20;
+const params = Astro.url.searchParams;
+const estado = params.get("estado") || null;
+const metodo = params.get("metodo") || null;
+const buscar = (params.get("buscar") ?? "").trim() || null;
+const pagina = Math.max(1, Number.parseInt(params.get("pagina") ?? "1", 10) || 1);
+
+let resultado = { items: [] as any[], total: 0 };
+let error: string | null = null;
+try {
+  ({ adminPedidos: resultado } = await graphqlServer(Astro.cookies, QUERY_ADMIN_PEDIDOS, {
+    estado,
+    metodo,
+    buscar,
+    limite: POR_PAGINA,
+    offset: (pagina - 1) * POR_PAGINA,
+  }));
+} catch (err) {
+  error = err instanceof Error ? err.message : String(err);
+}
+
+const paginas = Math.max(1, Math.ceil(resultado.total / POR_PAGINA));
+// Misma URL con otra página (conserva los filtros).
+const enlacePagina = (n: number) => {
+  const p = new URLSearchParams(params);
+  p.set("pagina", String(n));
+  return `/admin/pedidos?${p}`;
+};
+const hayFiltros = Boolean(estado || metodo || buscar);
+---
+
+<Layout title="Pedidos · Admin">
+  <Fragment slot="sidebar"><AdminNav /></Fragment>
+
+  <section class="admin">
+    <div class="admin__cabecera">
+      <div>
+        <h2>Pedidos</h2>
+        <p class="muted">
+          {resultado.total.toLocaleString("es-MX")}
+          {resultado.total === 1 ? " pedido" : " pedidos"}
+          {hayFiltros && " con estos filtros"}
+        </p>
+      </div>
+    </div>
+
+    <form class="filtros" method="get" action="/admin/pedidos">
+      <label>
+        Estado
+        <select name="estado">
+          <option value="">Todos</option>
+          {
+            Object.entries(ESTADOS_PEDIDO).map(([valor, nombre]) => (
+              <option value={valor} selected={valor === estado}>
+                {nombre}
+              </option>
+            ))
+          }
+        </select>
+      </label>
+      <label>
+        Método
+        <select name="metodo">
+          <option value="">Todos</option>
+          {
+            Object.entries(METODOS_PAGO)
+              .filter(([valor]) => valor !== "sin_registro")
+              .map(([valor, nombre]) => (
+                <option value={valor} selected={valor === metodo}>
+                  {nombre}
+                </option>
+              ))
+          }
+        </select>
+      </label>
+      <label class="filtros__buscar">
+        Buscar
+        <input type="search" name="buscar" value={buscar ?? ""} placeholder="#12, nombre o email" />
+      </label>
+      <button class="btn btn--primario" type="submit">Filtrar</button>
+      {hayFiltros && <a class="btn btn--link" href="/admin/pedidos">Quitar filtros</a>}
+    </form>
+
+    {
+      error ? (
+        <div class="error-box">
+          <p>No se pudieron cargar los pedidos: {error}</p>
+        </div>
+      ) : resultado.items.length === 0 ? (
+        <p class="muted vacio">No hay pedidos {hayFiltros ? "con estos filtros" : "todavía"}.</p>
+      ) : (
+        <div class="panel-card">
+          <div class="tabla-scroll">
+            <table class="tabla">
+              <thead>
+                <tr>
+                  <th scope="col">Pedido</th>
+                  <th scope="col">Fecha</th>
+                  <th scope="col">Cliente</th>
+                  <th scope="col">Método</th>
+                  <th scope="col">Estado</th>
+                  <th scope="col" class="num">Total</th>
+                </tr>
+              </thead>
+              <tbody>
+                {resultado.items.map((p: any) => (
+                  <tr>
+                    <td>
+                      <a href={`/admin/pedidos/${p.id}`}>#{p.id}</a>
+                    </td>
+                    <td class="fecha">{fechaHora(p.fecha)}</td>
+                    <td>
+                      {p.usuario.nombre}
+                      <span class="muted tabla__sub">{p.usuario.email}</span>
+                    </td>
+                    <td>{METODOS_PAGO[p.metodoPago as keyof typeof METODOS_PAGO] ?? "Sin registro"}</td>
+                    <td>
+                      <span class={`estado estado--${p.estado}`}>
+                        {ESTADOS_PEDIDO[p.estado as keyof typeof ESTADOS_PEDIDO] ?? p.estado}
+                      </span>
+                    </td>
+                    <td class="num">{dinero(p.total)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )
+    }
+
+    {
+      paginas > 1 && (
+        <nav class="paginacion" aria-label="Páginas">
+          {pagina > 1 ? <a class="btn" href={enlacePagina(pagina - 1)}>← Anterior</a> : <span />}
+          <span class="muted">
+            Página {pagina} de {paginas}
+          </span>
+          {pagina < paginas ? <a class="btn" href={enlacePagina(pagina + 1)}>Siguiente →</a> : <span />}
+        </nav>
+      )
+    }
+  </section>
+</Layout>

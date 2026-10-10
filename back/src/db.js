@@ -13,10 +13,20 @@ if (!process.env.DATABASE_URL) {
   );
 }
 
+// Una base en tu propia computadora (localhost) normalmente no tiene SSL.
+const esLocal = /@(localhost|127\.0\.0\.1)(:\d+)?\//.test(process.env.DATABASE_URL);
+
 // Pool de conexiones a PostgreSQL (Neon). Neon requiere SSL.
 export const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
-  ssl: { rejectUnauthorized: false },
+  ssl: esLocal ? false : { rejectUnauthorized: false },
+});
+
+// Neon cierra las conexiones que pasan un rato sin usarse. Sin este manejador
+// ese aviso tumbaría todo el servidor; así solo se registra y el pool abre
+// una conexión nueva la próxima vez que se necesite.
+pool.on("error", (err) => {
+  console.error("Se cerró una conexión inactiva con PostgreSQL:", err.message);
 });
 
 const SQL_SCRIPT_PATH = path.join(__dirname, "..", "..", "db.sql");

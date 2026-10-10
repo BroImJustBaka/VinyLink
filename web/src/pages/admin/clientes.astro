@@ -1,0 +1,110 @@
+---
+// Panel admin → Clientes: cuánto ha comprado cada usuario y su rol.
+// El rol se cambia con un formulario POST (no se puede cambiar el propio).
+import Layout from "../../layouts/Layout.astro";
+import AdminNav from "../../components/admin/AdminNav.astro";
+import { graphqlServer } from "../../lib/graphql";
+import { QUERY_ADMIN_CLIENTES, MUTATION_CAMBIAR_ROL } from "../../lib/queries/admin.js";
+import { dinero, fecha } from "../../lib/formato.js";
+
+const yo = Astro.locals.user!;
+let error: string | null = null;
+
+if (Astro.request.method === "POST") {
+  const form = await Astro.request.formData();
+  try {
+    await graphqlServer(Astro.cookies, MUTATION_CAMBIAR_ROL, {
+      id: String(form.get("id")),
+      rol: String(form.get("rol")),
+    });
+    return Astro.redirect("/admin/clientes?ok=1", 303);
+  } catch (err) {
+    error = err instanceof Error ? err.message : String(err);
+  }
+}
+
+let clientes: any[] = [];
+try {
+  ({ adminClientes: clientes } = await graphqlServer(Astro.cookies, QUERY_ADMIN_CLIENTES));
+} catch (err) {
+  error ??= err instanceof Error ? err.message : String(err);
+}
+const aviso = Astro.url.searchParams.get("ok") ? "Rol actualizado." : null;
+---
+
+<Layout title="Clientes · Admin">
+  <Fragment slot="sidebar"><AdminNav /></Fragment>
+
+  <section class="admin">
+    <div class="admin__cabecera">
+      <div>
+        <h2>Clientes</h2>
+        <p class="muted">{clientes.length} usuarios registrados, ordenados por lo que han comprado.</p>
+      </div>
+    </div>
+
+    {aviso && <div class="confirmacion-box"><span>✓ {aviso}</span></div>}
+    {
+      error && (
+        <div class="error-box" role="alert">
+          <p>{error}</p>
+        </div>
+      )
+    }
+
+    {
+      clientes.length > 0 && (
+        <div class="panel-card">
+          <div class="tabla-scroll">
+            <table class="tabla">
+              <thead>
+                <tr>
+                  <th scope="col">Usuario</th>
+                  <th scope="col" class="num">Pedidos pagados</th>
+                  <th scope="col" class="num">Total comprado</th>
+                  <th scope="col">Último pedido</th>
+                  <th scope="col">Alta</th>
+                  <th scope="col">Rol</th>
+                </tr>
+              </thead>
+              <tbody>
+                {clientes.map((c) => (
+                  <tr>
+                    <td>
+                      {c.usuario.nombre}
+                      <span class="muted tabla__sub">{c.usuario.email}</span>
+                    </td>
+                    <td class="num">{c.pedidos}</td>
+                    <td class="num">{dinero(c.totalGastado)}</td>
+                    <td class="fecha">{fecha(c.ultimoPedido)}</td>
+                    <td class="fecha">{fecha(c.creadoEn)}</td>
+                    <td>
+                      {c.usuario.id === yo.id ? (
+                        <span class="muted">{c.usuario.rol} (tú)</span>
+                      ) : (
+                        <form method="post" action="/admin/clientes" class="form-rol">
+                          <input type="hidden" name="id" value={c.usuario.id} />
+                          <select name="rol" aria-label={`Rol de ${c.usuario.nombre}`}>
+                            <option value="CLIENTE" selected={c.usuario.rol === "CLIENTE"}>
+                              Cliente
+                            </option>
+                            <option value="ADMIN" selected={c.usuario.rol === "ADMIN"}>
+                              Admin
+                            </option>
+                          </select>
+                          <button class="btn btn--chico" type="submit">
+                            Guardar
+                          </button>
+                        </form>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )
+    }
+  </section>
+</Layout>

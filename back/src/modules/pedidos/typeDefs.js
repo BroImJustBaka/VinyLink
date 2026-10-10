@@ -13,6 +13,7 @@ export const typeDefs = `#graphql
   type Pedido {
     id: ID!
     fecha: String!
+    "pendiente, pagado, enviado, entregado, cancelado o reembolsado."
     estado: String!
     total: Float!
     usuario: Usuario!
@@ -25,7 +26,7 @@ export const typeDefs = `#graphql
     cantidad: Int!
   }
 
-  "Renglones para registrar un pedido. El comprador es el usuario con sesión."
+  "Renglones para registrar un pedido (ver crearPedido en el módulo pagos)."
   input PedidoInput {
     items: [DetallePedidoInput!]!
   }
@@ -64,8 +65,6 @@ export const typeDefs = `#graphql
   }
 
   extend type Mutation {
-    "Registra un pedido para el usuario con sesión; descuenta stock y vacía su carrito en DB."
-    crearPedido(data: PedidoInput!): Pedido!
     "Agrega un producto al carrito del usuario (suma cantidad si ya estaba)."
     agregarAlCarrito(productoId: ID!, cantidad: Int = 1): Carrito!
     "Fija la cantidad exacta de un renglón del carrito (lo quita si llega a 0)."

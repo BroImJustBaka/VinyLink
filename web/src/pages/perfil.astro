@@ -6,6 +6,7 @@
 import Layout from "../layouts/Layout.astro";
 import { graphqlServer } from "../lib/graphql";
 import { QUERY_MIS_PEDIDOS } from "../lib/queries/pedidos.js";
+import { dinero, fecha, ESTADOS_PEDIDO } from "../lib/formato.js";
 
 type Pedido = {
   id: string;
@@ -25,8 +26,6 @@ try {
   error = err instanceof Error ? err.message : "No se pudo cargar el historial";
 }
 
-const formatoFecha = (iso: string) =>
-  new Date(iso).toLocaleDateString("es-MX", { dateStyle: "medium" });
 const piezas = (p: Pedido) => p.detalles.reduce((acc, d) => acc + d.cantidad, 0);
 ---
 
@@ -37,6 +36,7 @@ const piezas = (p: Pedido) => p.detalles.reduce((acc, d) => acc + d.cantidad, 0)
 
     <div class="perfil-view__acciones">
       <a class="btn btn--primario" href="/carrito">🛒 Ir al carrito</a>
+      {usuario.rol === "ADMIN" && <a class="btn" href="/admin">Panel de administración</a>}
 
       <form method="POST" action="/logout">
         <button class="btn btn--link" type="submit">Cerrar sesión</button>
@@ -60,11 +60,14 @@ const piezas = (p: Pedido) => p.detalles.reduce((acc, d) => acc + d.cantidad, 0)
             <li>
               <a class="pedido-fila" href={`/pedido/${p.id}`}>
                 <strong>Pedido #{p.id}</strong>
-                <span class="muted">{formatoFecha(p.fecha)}</span>
+                <span class="muted">{fecha(p.fecha)}</span>
                 <span class="muted">
-                  {piezas(p)} {piezas(p) === 1 ? "pieza" : "piezas"} · {p.estado}
+                  {piezas(p)} {piezas(p) === 1 ? "pieza" : "piezas"} ·{" "}
+                  <span class={`estado estado--${p.estado}`}>
+                    {ESTADOS_PEDIDO[p.estado as keyof typeof ESTADOS_PEDIDO] ?? p.estado}
+                  </span>
                 </span>
-                <span class="precio">${p.total.toFixed(2)}</span>
+                <span class="precio">{dinero(p.total)}</span>
               </a>
             </li>
           ))}

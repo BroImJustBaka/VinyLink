@@ -1,14 +1,24 @@
 ---
-// Dueño: Persona B. Migrado desde front/src/views/CheckoutView.jsx.
+// Dueño: Persona B. Checkout con pagos de Stripe.
 // Requiere sesión: el middleware de C redirige a /login si no hay usuario.
-// Si aun así llega sin sesión, el backend rechaza el pedido y la isla muestra
-// el enlace a /login.
+// La configuración de pagos (llave publicable, modo de prueba, límites) se
+// pide al backend aquí en el servidor y se le pasa a la isla.
 import Layout from "../layouts/Layout.astro";
 import CheckoutForm from "../components/carrito/CheckoutForm.jsx";
+import { graphqlServer } from "../lib/graphql";
+import { QUERY_CONFIG_PAGOS } from "../lib/queries/pagos.js";
 
 const user = Astro.locals.user;
+
+let pagos = null;
+let errorConfig: string | null = null;
+try {
+  ({ configPagos: pagos } = await graphqlServer(Astro.cookies, QUERY_CONFIG_PAGOS));
+} catch (err) {
+  errorConfig = err instanceof Error ? err.message : String(err);
+}
 ---
 
 <Layout title="Checkout">
-  <CheckoutForm client:only="react" user={user} />
+  <CheckoutForm client:only="react" user={user} pagos={pagos} errorConfig={errorConfig} />
 </Layout>
