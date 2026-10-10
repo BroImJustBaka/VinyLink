@@ -9,6 +9,7 @@
 // el cobro a Stripe y se guarda lo que respondió. Después, el webhook, la
 // página del pedido o la revisión periódica le vuelven a preguntar a Stripe y
 // llaman a aplicarEstado(), que es el ÚNICO lugar donde cambia un estado.
+import { randomUUID } from "node:crypto";
 import { one, transaccion } from "../../lib/sql.js";
 import {
   crearPedidoPendiente,
@@ -76,6 +77,9 @@ export function mensajeDeError(err) {
   if (conocido) return conocido;
   if (e.type === "card_error") return `El pago fue rechazado: ${e.message}`;
   if (e.type === "invalid_request_error") return `Stripe rechazó la operación: ${e.message}`;
+  if (e.type === "authentication_error" || err?.type === "StripeAuthenticationError") {
+    return "Los pagos no están bien configurados en la tienda (llave de Stripe inválida).";
+  }
   return "No pudimos comunicarnos con Stripe. Intenta de nuevo en unos segundos.";
 }
 
@@ -334,8 +338,21 @@ function validadorDeTotal(metodo) {
 
 // El cobro ni siquiera se pudo crear (tarjeta rechazada, error de Stripe):
 // se cancela el pedido para devolver el stock y se avisa al cliente.
+// Llave de idempotencia: si la red falla y stripe-node reintenta la MISMA
+// llamada, Stripe reconoce la llave y no cobra dos veces. Lleva un UUID porque
+// el número de pedido solo es único dentro de una base de datos: otra base
+// (por ejemplo una de pruebas) conectada a la misma cuenta de Stripe repetiría
+// "pedido-14-cobro" y Stripe rechazaría el cobro por reusar la llave.
+function llaveIdempotencia(pedidoId, accion) {
+  return `pedido-${pedidoId}-${accion}-${randomUUID()}`;
+}
+
 async function fallarCobro(pedidoId, err) {
   const mensaje = mensajeDeError(err);
+  // Los rechazos de tarjeta son normales; lo demás se muestra completo para depurar.
+  if (err?.type !== "StripeCardError") {
+    console.error(`Stripe rechazó el cobro del pedido ${pedidoId}:`, err?.type, err?.message);
+  }
   await aplicarEstado(pedidoId, {
     estadoPago: "fallido",
     detalle: {},
@@ -412,7 +429,7 @@ async function pagarConTarjeta({ usuario, items, metodo, confirmationTokenId }) 
         expand: ["latest_charge"],
       },
       // Si la red falla y la librería reintenta, Stripe no cobra dos veces.
-      { idempotencyKey: `pedido-${pedido.id}-cobro` }
+      { idempotencyKey: llaveIdempotencia(pedido.id, "cobro") }
     );
   } catch (err) {
     return fallarCobro(pedido.id, err);
@@ -461,7 +478,7 @@ async function pagarConOxxo({ usuario, items, nombre, email }) {
         description: descripcion(pedido.id),
         metadata: metadatos(pedido.id, usuario.id),
       },
-      { idempotencyKey: `pedido-${pedido.id}-cobro` }
+      { idempotencyKey: llaveIdempotencia(pedido.id, "cobro") }
     );
   } catch (err) {
     return fallarCobro(pedido.id, err);
@@ -528,7 +545,7 @@ async function pagarConSpei({ usuario, items }) {
         description: descripcion(pedido.id),
         metadata: metadatos(pedido.id, usuario.id),
       },
-      { idempotencyKey: `pedido-${pedido.id}-cobro` }
+      { idempotencyKey: llaveIdempotencia(pedido.id, "cobro") }
     );
   } catch (err) {
     return fallarCobro(pedido.id, err);
@@ -585,7 +602,7 @@ export async function crearLinkDePago({ usuario, items }) {
         expires_at: Math.floor(Date.now() / 1000) + SEGUNDOS_LINK,
         success_url: `${WEB_URL}/pago/gracias?pedido=${pedido.id}`,
       },
-      { idempotencyKey: `pedido-${pedido.id}-cobro` }
+      { idempotencyKey: llaveIdempotencia(pedido.id, "cobro") }
     );
   } catch (err) {
     return fallarCobro(pedido.id, err);
@@ -693,7 +710,7 @@ export async function reembolsarPedido(pedidoId, { reponerStock = true } = {}) {
   try {
     reembolso = await s.refunds.create(
       { payment_intent: pi.id, reason: "requested_by_customer", metadata: { pedido_id: String(pedidoId) } },
-      { idempotencyKey: `pedido-${pedidoId}-reembolso` }
+      { idempotencyKey: llaveIdempotencia(pedidoId, "reembolso") }
     );
   } catch (err) {
     throw new Error(`Stripe no pudo hacer el reembolso: ${mensajeDeError(err)}`);
