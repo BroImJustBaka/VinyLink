@@ -1,0 +1,154 @@
+---
+// Panel admin → Reportes: ventas por categoría, productos más vendidos y
+// descargas en CSV (con rango de fechas). Los CSV los arma el backend
+// (adminExportar) y se descargan en /admin/exportar/<tipo>.csv.
+import Layout from "../../layouts/Layout.astro";
+import AdminNav from "../../components/admin/AdminNav.astro";
+import Kpi from "../../components/admin/Kpi.astro";
+import GraficaBarras from "../../components/admin/GraficaBarras.astro";
+import { graphqlServer } from "../../lib/graphql";
+import { QUERY_REPORTES } from "../../lib/queries/admin.js";
+import { dinero } from "../../lib/formato.js";
+
+const PERIODOS = [7, 30, 90, 365];
+const pedidoDias = Number(Astro.url.searchParams.get("dias"));
+const dias = PERIODOS.includes(pedidoDias) ? pedidoDias : 30;
+
+let datos: any = null;
+let error: string | null = null;
+try {
+  datos = await graphqlServer(Astro.cookies, QUERY_REPORTES, { dias });
+} catch (err) {
+  error = err instanceof Error ? err.message : String(err);
+}
+
+const plural = (n: number, una: string, varias: string) => `${n} ${n === 1 ? una : varias}`;
+const porCategoria = (datos?.adminVentasPorCategoria ?? []).map((v: any) => ({
+  etiqueta: v.categoria.nombre,
+  valor: v.ingresos,
+  textoValor: dinero(v.ingresos),
+  detalle: plural(v.unidades, "unidad", "unidades"),
+}));
+
+const REPORTES = [
+  { tipo: "pedidos", nombre: "Pedidos", detalle: "Un renglón por pedido: cliente, desglose, cupón, envío y guía." },
+  { tipo: "ventas_dia", nombre: "Ventas por día", detalle: "Pedidos, subtotal, descuentos, envíos y total de cada día." },
+  { tipo: "productos", nombre: "Productos e inventario", detalle: "Precio, stock, valor en inventario y piezas vendidas." },
+  { tipo: "movimientos", nombre: "Kárdex", detalle: "Cada movimiento de inventario con su autor y motivo." },
+  { tipo: "clientes", nombre: "Clientes", detalle: "Datos de contacto y lo que ha comprado cada uno." },
+];
+const hoy = new Date().toLocaleDateString("en-CA", { timeZone: "America/Mexico_City" });
+---
+
+<Layout title="Reportes · Admin">
+  <Fragment slot="sidebar"><AdminNav /></Fragment>
+
+  <section class="admin">
+    <div class="admin__cabecera">
+      <div>
+        <h2>Reportes</h2>
+        <p class="muted">Ventas pagadas de los últimos {dias} días.</p>
+      </div>
+      <nav class="periodos" aria-label="Periodo">
+        {
+          PERIODOS.map((p) => (
+            <a href={`/admin/reportes?dias=${p}`} class:list={["periodos__opcion", { "periodos__opcion--activa": p === dias }]}>
+              {p === 365 ? "1 año" : `${p} días`}
+            </a>
+          ))
+        }
+      </nav>
+    </div>
+
+    {
+      error && (
+        <div class="error-box">
+          <p>No se pudieron cargar los reportes: {error}</p>
+        </div>
+      )
+    }
+
+    {
+      datos && (
+        <>
+          <div class="kpis">
+            <Kpi etiqueta="Ingresos" valor={dinero(datos.adminResumen.ingresos)} />
+            <Kpi etiqueta="Pedidos pagados" valor={String(datos.adminResumen.pedidosPagados)} />
+            <Kpi etiqueta="Ticket promedio" valor={dinero(datos.adminResumen.ticketPromedio)} />
+            <Kpi etiqueta="Descuentos" valor={dinero(datos.adminResumen.descuentos)} />
+            <Kpi etiqueta="Reembolsos" valor={dinero(datos.adminResumen.reembolsos)} />
+          </div>
+
+          <div class="admin__fila">
+            <GraficaBarras
+              titulo="Ventas por categoría"
+              subtitulo="Ingresos de los productos vendidos"
+              filas={porCategoria}
+              vacio="Todavía no hay ventas en este periodo."
+              columnaValor="Ingresos"
+              columnaDetalle="Unidades"
+            />
+            <div class="panel-card">
+              <h3>Productos más vendidos</h3>
+              {datos.adminTopProductos.length === 0 ? (
+                <p class="muted">Todavía no hay ventas en este periodo.</p>
+              ) : (
+                <div class="tabla-scroll">
+                  <table class="tabla">
+                    <thead>
+                      <tr>
+                        <th scope="col">Producto</th>
+                        <th scope="col" class="num">Unidades</th>
+                        <th scope="col" class="num">Ingresos</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {datos.adminTopProductos.map((t: any) => (
+                        <tr>
+                          <td>
+                            <a href={`/admin/productos/${t.producto.id}`}>{t.producto.nombre}</a>
+                            {t.producto.sku && <span class="muted tabla__sub">{t.producto.sku}</span>}
+                          </td>
+                          <td class="num">{t.unidades}</td>
+                          <td class="num">{dinero(t.ingresos)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          </div>
+        </>
+      )
+    }
+
+    <div class="panel-card">
+      <h3>Descargar en CSV (Excel)</h3>
+      <p class="muted">Elige un rango de fechas o déjalo vacío para descargar todo.</p>
+      <div class="reportes">
+        {
+          REPORTES.map((r) => (
+            <form method="get" action={`/admin/exportar/${r.tipo}.csv`} class="reporte">
+              <div>
+                <strong>{r.nombre}</strong>
+                <p class="muted">{r.detalle}</p>
+              </div>
+              {r.tipo !== "productos" && (
+                <div class="reporte__fechas">
+                  <label>
+                    Desde <input type="date" name="desde" max={hoy} />
+                  </label>
+                  <label>
+                    Hasta <input type="date" name="hasta" max={hoy} />
+                  </label>
+                </div>
+              )}
+              <button class="btn" type="submit">⬇ Descargar</button>
+            </form>
+          ))
+        }
+      </div>
+    </div>
+  </section>
+</Layout>

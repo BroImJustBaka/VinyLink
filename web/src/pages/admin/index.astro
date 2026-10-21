@@ -1,7 +1,7 @@
 ---
 // Panel admin → Resumen. Indicadores del periodo, productos más vendidos,
 // ingresos por día y por método de pago, stock bajo y pedidos recientes.
-// El middleware ya garantiza que solo entra un ADMIN.
+// El middleware ya garantiza que solo entra alguien con permiso "reportes".
 import Layout from "../../layouts/Layout.astro";
 import AdminNav from "../../components/admin/AdminNav.astro";
 import Kpi from "../../components/admin/Kpi.astro";
@@ -117,7 +117,14 @@ const porMetodo = (datos?.adminVentasPorMetodo ?? []).map((m: any) => ({
               valor={r.pedidosPendientes.toLocaleString("es-MX")}
               nota="OXXO, SPEI y links sin pagar todavía"
             />
+            <Kpi
+              etiqueta="Por enviar"
+              valor={r.pedidosPorEnviar.toLocaleString("es-MX")}
+              nota="Pagados que todavía no salen"
+            />
             <Kpi etiqueta="Clientes nuevos" valor={r.clientesNuevos.toLocaleString("es-MX")} />
+            <Kpi etiqueta="Descuentos con cupón" valor={dinero(r.descuentos)} />
+            <Kpi etiqueta="Reembolsos" valor={dinero(r.reembolsos)} nota="Totales y parciales del periodo" />
           </div>
 
           <div class="admin__fila">
@@ -197,16 +204,16 @@ const porMetodo = (datos?.adminVentasPorMetodo ?? []).map((m: any) => ({
             <div class="panel-card">
               <div class="panel-card__cabecera">
                 <h3>Stock bajo</h3>
-                <a class="btn btn--link" href="/admin/productos">Inventario</a>
+                <a class="btn btn--link" href="/admin/inventario">Inventario</a>
               </div>
               {datos.adminStockBajo.length === 0 ? (
-                <p class="muted">Todos los productos tienen más de 5 piezas.</p>
+                <p class="muted">Ningún producto está en su stock mínimo.</p>
               ) : (
                 <ul class="lista-stock">
                   {datos.adminStockBajo.map((p: any) => (
                     <li>
                       <a href={`/admin/productos/${p.id}`}>{p.nombre}</a>
-                      <span class:list={["stock", { "stock--agotado": p.stock === 0 }]}>
+                      <span class:list={["stock", { "stock--agotado": p.stock === 0 }]} title={`Mínimo: ${p.stockMinimo}`}>
                         {p.stock === 0 ? "Agotado" : plural(p.stock, "pieza", "piezas")}
                       </span>
                     </li>

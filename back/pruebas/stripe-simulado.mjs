@@ -183,8 +183,16 @@ class StripeSimulado {
       if (!ch) throw invalido("No charge");
       if (ch.payment_method_details.type === "oxxo") throw invalido("OXXO payments cannot be refunded.");
       if (ch.refunded) throw invalido("Charge has already been refunded.", "charge_already_refunded");
-      ch.refunded = true;
-      return { id: id("re"), object: "refund" };
+      sim.llamadas.push(["refunds.create", p]);
+      // Como Stripe: sin `amount` devuelve lo que falta; el cargo queda
+      // "refunded" solo cuando ya se devolvió todo.
+      const yaDevuelto = ch.amount_refunded ?? 0;
+      const monto = p.amount ?? pi.amount - yaDevuelto;
+      if (!Number.isInteger(monto) || monto < 1) throw invalido("Invalid refund amount");
+      if (yaDevuelto + monto > pi.amount) throw invalido("Refund amount is greater than unrefunded amount on charge", "amount_too_large");
+      ch.amount_refunded = yaDevuelto + monto;
+      ch.refunded = ch.amount_refunded >= pi.amount;
+      return { id: id("re"), object: "refund", amount: monto };
     },
   };
   testHelpers = {

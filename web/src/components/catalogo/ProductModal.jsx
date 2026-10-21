@@ -2,9 +2,19 @@
 // Isla React (client:load). Las tarjetas de producto se renderizan en el
 // servidor con un atributo data-producto; esta isla escucha los clicks en
 // ellas y abre el detalle como modal, montado con un Portal sobre <body>.
+// Mientras el modal está abierto, el stock y el precio se actualizan en vivo
+// (subscription pública stockActualizado): si alguien compra la última pieza,
+// el botón se desactiva sin recargar.
 import { createPortal } from "react-dom";
 import { useEffect, useState } from "react";
 import { useCartStore } from "../../stores/cart.js";
+import { suscribirse } from "../../lib/tiempoReal.js";
+
+const SUB_STOCK = `
+  subscription StockProducto($id: ID) {
+    stockActualizado(productoId: $id) { id stock precio activo }
+  }
+`;
 
 export default function ProductModal() {
   const [producto, setProducto] = useState(null);
@@ -38,6 +48,20 @@ export default function ProductModal() {
       document.body.style.overflow = overflowAnterior;
     };
   }, [producto]);
+
+  // Stock en vivo del producto abierto (un producto desactivado cuenta como agotado).
+  const productoId = producto?.id;
+  useEffect(() => {
+    if (!productoId) return;
+    return suscribirse(SUB_STOCK, { id: String(productoId) }, ({ stockActualizado: p }) => {
+      setProducto((actual) =>
+        actual && String(actual.id) === String(p.id)
+          ? { ...actual, precio: p.precio, stock: p.activo ? p.stock : 0 }
+          : actual
+      );
+      setCantidad((c) => Math.max(1, Math.min(c, p.stock)));
+    });
+  }, [productoId]);
 
   // Aviso breve después de agregar ("Agregado al carrito").
   useEffect(() => {

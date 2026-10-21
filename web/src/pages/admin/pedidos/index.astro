@@ -7,6 +7,7 @@ import AdminNav from "../../../components/admin/AdminNav.astro";
 import { graphqlServer } from "../../../lib/graphql";
 import { QUERY_ADMIN_PEDIDOS } from "../../../lib/queries/admin.js";
 import { dinero, fechaHora, ESTADOS_PEDIDO, METODOS_PAGO } from "../../../lib/formato.js";
+import { puede } from "../../../lib/permisos.js";
 
 const POR_PAGINA = 20;
 const params = Astro.url.searchParams;
@@ -37,6 +38,7 @@ const enlacePagina = (n: number) => {
   return `/admin/pedidos?${p}`;
 };
 const hayFiltros = Boolean(estado || metodo || buscar);
+const exportar = puede(Astro.locals.user, "reportes");
 ---
 
 <Layout title="Pedidos · Admin">
@@ -52,6 +54,12 @@ const hayFiltros = Boolean(estado || metodo || buscar);
           {hayFiltros && " con estos filtros"}
         </p>
       </div>
+      {exportar && <a class="btn" href="/admin/exportar/pedidos.csv" download>⬇ Exportar CSV</a>}
+    </div>
+
+    <div class="aviso-vivo" id="pedidos-nuevos" hidden>
+      <span>Llegaron pedidos nuevos.</span>
+      <a class="btn btn--chico btn--primario" href={Astro.url.pathname + Astro.url.search}>Recargar la lista</a>
     </div>
 
     <form class="filtros" method="get" action="/admin/pedidos">
@@ -85,7 +93,7 @@ const hayFiltros = Boolean(estado || metodo || buscar);
       </label>
       <label class="filtros__buscar">
         Buscar
-        <input type="search" name="buscar" value={buscar ?? ""} placeholder="#12, nombre o email" />
+        <input type="search" name="buscar" value={buscar ?? ""} placeholder="#12, nombre, email o guía" />
       </label>
       <button class="btn btn--primario" type="submit">Filtrar</button>
       {hayFiltros && <a class="btn btn--link" href="/admin/pedidos">Quitar filtros</a>}
@@ -108,6 +116,7 @@ const hayFiltros = Boolean(estado || metodo || buscar);
                   <th scope="col">Fecha</th>
                   <th scope="col">Cliente</th>
                   <th scope="col">Método</th>
+                  <th scope="col">Envío</th>
                   <th scope="col">Estado</th>
                   <th scope="col" class="num">Total</th>
                 </tr>
@@ -124,6 +133,10 @@ const hayFiltros = Boolean(estado || metodo || buscar);
                       <span class="muted tabla__sub">{p.usuario.email}</span>
                     </td>
                     <td>{METODOS_PAGO[p.metodoPago as keyof typeof METODOS_PAGO] ?? "Sin registro"}</td>
+                    <td>
+                      {p.envio ? `${p.envio.ciudad}, ${p.envio.estado}` : <span class="muted">—</span>}
+                      {p.numeroGuia && <span class="muted tabla__sub">Guía {p.numeroGuia}</span>}
+                    </td>
                     <td>
                       <span class={`estado estado--${p.estado}`}>
                         {ESTADOS_PEDIDO[p.estado as keyof typeof ESTADOS_PEDIDO] ?? p.estado}
@@ -152,3 +165,12 @@ const hayFiltros = Boolean(estado || metodo || buscar);
     }
   </section>
 </Layout>
+
+<script>
+  // Aviso en vivo (subscription eventosAdmin, ver AvisosAdmin.jsx): si llega un
+  // pedido nuevo mientras se ve la lista, se ofrece recargarla.
+  window.addEventListener("vinylink:evento-admin", (e) => {
+    const detalle = (e as CustomEvent).detail;
+    if (detalle?.tipo === "pedido_nuevo") document.getElementById("pedidos-nuevos")?.removeAttribute("hidden");
+  });
+</script>

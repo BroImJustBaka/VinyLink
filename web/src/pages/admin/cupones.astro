@@ -1,0 +1,212 @@
+---
+// Panel admin → Cupones de descuento. Lista con usos y lo descontado;
+// formulario para crear o editar (?editar=3). Los usos se cuentan con los
+// pedidos que no se cancelaron, así que cancelar un pedido "devuelve" el uso.
+import Layout from "../../layouts/Layout.astro";
+import AdminNav from "../../components/admin/AdminNav.astro";
+import { graphqlServer } from "../../lib/graphql";
+import { QUERY_CUPONES, MUTATION_CREAR_CUPON, MUTATION_ACTUALIZAR_CUPON } from "../../lib/queries/admin.js";
+import { dinero, fecha, TIPOS_CUPON } from "../../lib/formato.js";
+
+const AVISOS: Record<string, string> = { creado: "Cupón creado.", guardado: "Cambios guardados." };
+let error: string | null = null;
+const editarId = Astro.url.searchParams.get("editar");
+let borrador: any = null;
+
+// "2026-10-21" (input date) → ISO al inicio o al final del día en la Ciudad de México.
+const aIso = (d: string, finDelDia: boolean) =>
+  d ? new Date(`${d}T${finDelDia ? "23:59:59" : "00:00:00"}-06:00`).toISOString() : null;
+const aFecha = (iso: string | null) =>
+  iso ? new Date(iso).toLocaleDateString("en-CA", { timeZone: "America/Mexico_City" }) : "";
+
+if (Astro.request.method === "POST") {
+  const form = await Astro.request.formData();
+  const id = String(form.get("id") ?? "");
+  const t = (c: string) => String(form.get(c) ?? "").trim();
+  const entero = (c: string) => (t(c) ? Number.parseInt(t(c), 10) : null);
+  const data = {
+    codigo: t("codigo"),
+    descripcion: t("descripcion") || null,
+    tipo: t("tipo"),
+    valor: t("valor") ? Number(t("valor")) : 0,
+    minimoCompra: t("minimoCompra") ? Number(t("minimoCompra")) : 0,
+    usosMaximos: entero("usosMaximos"),
+    usosPorCliente: entero("usosPorCliente"),
+    vigenteDesde: aIso(t("vigenteDesde"), false),
+    vigenteHasta: aIso(t("vigenteHasta"), true),
+    activo: form.get("activo") === "on",
+  };
+  borrador = { ...data, id };
+  try {
+    if (id) {
+      await graphqlServer(Astro.cookies, MUTATION_ACTUALIZAR_CUPON, { id, data });
+      return Astro.redirect("/admin/cupones?ok=guardado", 303);
+    }
+    await graphqlServer(Astro.cookies, MUTATION_CREAR_CUPON, { data });
+    return Astro.redirect("/admin/cupones?ok=creado", 303);
+  } catch (err) {
+    error = err instanceof Error ? err.message : String(err);
+  }
+}
+
+let cupones: any[] = [];
+try {
+  ({ adminCupones: cupones } = await graphqlServer(Astro.cookies, QUERY_CUPONES));
+} catch (err) {
+  error ??= err instanceof Error ? err.message : String(err);
+}
+const aviso = AVISOS[Astro.url.searchParams.get("ok") ?? ""] ?? null;
+const f = borrador ?? cupones.find((c) => c.id === editarId) ?? { tipo: "porcentaje", activo: true };
+
+const describir = (c: any) =>
+  c.tipo === "porcentaje" ? `${c.valor} %` : c.tipo === "monto" ? dinero(c.valor) : "Envío gratis";
+const vigencia = (c: any) => {
+  const ahora = Date.now();
+  if (!c.activo) return { texto: "Inactivo", clase: "etiqueta--apagada" };
+  if (c.vigenteHasta && new Date(c.vigenteHasta).getTime() < ahora) return { texto: "Vencido", clase: "etiqueta--apagada" };
+  if (c.vigenteDesde && new Date(c.vigenteDesde).getTime() > ahora) return { texto: "Programado", clase: "" };
+  if (c.usosMaximos && c.usos >= c.usosMaximos) return { texto: "Agotado", clase: "etiqueta--apagada" };
+  return { texto: "Vigente", clase: "etiqueta--ok" };
+};
+---
+
+<Layout title="Cupones · Admin">
+  <Fragment slot="sidebar"><AdminNav /></Fragment>
+
+  <section class="admin">
+    <div class="admin__cabecera">
+      <div>
+        <h2>Cupones</h2>
+        <p class="muted">El cliente escribe el código en el checkout; el total lo recalcula el backend.</p>
+      </div>
+    </div>
+
+    {aviso && <div class="confirmacion-box"><span>✓ {aviso}</span></div>}
+    {
+      error && (
+        <div class="error-box" role="alert">
+          <p>{error}</p>
+        </div>
+      )
+    }
+
+    <div class="admin__fila admin__fila--asimetrica">
+      <div class="panel-card">
+        <div class="tabla-scroll">
+          <table class="tabla">
+            <thead>
+              <tr>
+                <th scope="col">Código</th>
+                <th scope="col">Descuento</th>
+                <th scope="col">Condiciones</th>
+                <th scope="col" class="num">Usos</th>
+                <th scope="col" class="num">Descontado</th>
+                <th scope="col">Estado</th>
+                <th scope="col"><span class="sr-only">Acciones</span></th>
+              </tr>
+            </thead>
+            <tbody>
+              {cupones.map((c) => {
+                const v = vigencia(c);
+                return (
+                  <tr class:list={{ "fila--inactiva": v.texto !== "Vigente" }}>
+                    <td>
+                      <span class="cupon-chip">{c.codigo}</span>
+                      {c.descripcion && <span class="muted tabla__sub">{c.descripcion}</span>}
+                    </td>
+                    <td>{describir(c)}</td>
+                    <td class="muted">
+                      {c.minimoCompra > 0 ? `Desde ${dinero(c.minimoCompra)}` : "Sin mínimo"}
+                      {c.usosPorCliente && <span class="tabla__sub">{c.usosPorCliente} por cliente</span>}
+                      {(c.vigenteDesde || c.vigenteHasta) && (
+                        <span class="tabla__sub">
+                          {c.vigenteDesde ? fecha(c.vigenteDesde) : "…"} – {c.vigenteHasta ? fecha(c.vigenteHasta) : "…"}
+                        </span>
+                      )}
+                    </td>
+                    <td class="num">
+                      {c.usos}
+                      {c.usosMaximos ? ` / ${c.usosMaximos}` : ""}
+                    </td>
+                    <td class="num">{dinero(c.descuentoTotal)}</td>
+                    <td>
+                      <span class:list={["etiqueta", v.clase]}>{v.texto}</span>
+                    </td>
+                    <td>
+                      <a class="btn btn--chico" href={`/admin/cupones?editar=${c.id}`}>
+                        Editar
+                      </a>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="panel-card">
+        <h3>{f.id ? `Editar ${f.codigo}` : "Nuevo cupón"}</h3>
+        <form method="post" action="/admin/cupones" class="checkout-form formulario-admin">
+          {f.id && <input type="hidden" name="id" value={f.id} />}
+          <label>
+            Código
+            <input type="text" name="codigo" required pattern="[A-Za-z0-9_\-]{3,30}" maxlength="30" value={f.codigo ?? ""} placeholder="VERANO20" />
+          </label>
+          <label>
+            Descripción
+            <input type="text" name="descripcion" maxlength="120" value={f.descripcion ?? ""} />
+          </label>
+          <div class="formulario-admin__par">
+            <label>
+              Tipo
+              <select name="tipo">
+                {Object.entries(TIPOS_CUPON).map(([valor, nombre]) => (
+                  <option value={valor} selected={valor === f.tipo}>
+                    {nombre}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Valor (% o pesos)
+              <input type="number" name="valor" min="0" step="0.01" value={f.valor ?? ""} />
+            </label>
+          </div>
+          <div class="formulario-admin__par">
+            <label>
+              Compra mínima
+              <input type="number" name="minimoCompra" min="0" step="0.01" value={f.minimoCompra ?? ""} />
+            </label>
+            <label>
+              Usos máximos
+              <input type="number" name="usosMaximos" min="1" step="1" value={f.usosMaximos ?? ""} placeholder="Ilimitado" />
+            </label>
+          </div>
+          <div class="formulario-admin__par">
+            <label>
+              Usos por cliente
+              <input type="number" name="usosPorCliente" min="1" step="1" value={f.usosPorCliente ?? ""} placeholder="Ilimitado" />
+            </label>
+            <span></span>
+          </div>
+          <div class="formulario-admin__par">
+            <label>
+              Vigente desde
+              <input type="date" name="vigenteDesde" value={aFecha(f.vigenteDesde)} />
+            </label>
+            <label>
+              Hasta
+              <input type="date" name="vigenteHasta" value={aFecha(f.vigenteHasta)} />
+            </label>
+          </div>
+          <label class="casilla">
+            <input type="checkbox" name="activo" checked={f.activo} /> Activo
+          </label>
+          <button class="btn btn--primario" type="submit">{f.id ? "Guardar cambios" : "Crear cupón"}</button>
+          {f.id && <a class="btn btn--link" href="/admin/cupones">Cancelar</a>}
+        </form>
+      </div>
+    </div>
+  </section>
+</Layout>

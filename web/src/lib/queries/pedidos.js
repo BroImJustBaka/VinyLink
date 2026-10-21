@@ -14,8 +14,20 @@ const CAMPOS_PEDIDO = `
   fecha
   estado
   total
+  subtotal
+  descuento
+  costoEnvio
+  iva
+  cupon
   metodoPago
   pagadoEn
+  paqueteria
+  numeroGuia
+  enviadoEn
+  entregadoEn
+  montoReembolsado
+  envio { nombre telefono calle colonia ciudad estado cp referencias }
+  historial { tipo fecha estadoAnterior estadoNuevo texto }
   pago {
     ${CAMPOS_PAGO}
   }

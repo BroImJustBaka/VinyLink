@@ -1,0 +1,54 @@
+---
+// Dueño: Persona C. "¿Olvidaste tu contraseña?": pide el email y el backend
+// manda un link para elegir otra (vence en 1 hora). Siempre responde lo
+// mismo, exista o no la cuenta, para no revelar qué emails están registrados.
+import Layout from "../layouts/Layout.astro";
+import { graphqlServer } from "../lib/graphql";
+import { MUTATION_SOLICITAR_RESTABLECIMIENTO } from "../lib/queries/auth.js";
+
+let enviado = false;
+let error: string | null = null;
+let email = "";
+
+if (Astro.request.method === "POST") {
+  const form = await Astro.request.formData();
+  email = String(form.get("email") ?? "").trim();
+  try {
+    await graphqlServer(Astro.cookies, MUTATION_SOLICITAR_RESTABLECIMIENTO, { email });
+    enviado = true;
+  } catch (err) {
+    error = err instanceof Error ? err.message : String(err);
+  }
+}
+---
+
+<Layout title="Recuperar contraseña">
+  <section class="auth-form">
+    <h2>Recuperar contraseña</h2>
+    {
+      enviado ? (
+        <div class="confirmacion-box">
+          <span>
+            Si hay una cuenta con <strong>{email}</strong>, te mandamos un correo con un link para elegir una contraseña
+            nueva. Revisa también tu carpeta de spam. El link vence en 1 hora.
+          </span>
+        </div>
+      ) : (
+        <form method="POST" class="checkout-form">
+          <p class="muted">Escribe el email de tu cuenta y te mandamos un link para cambiar tu contraseña.</p>
+          <label>
+            Email
+            <input type="email" name="email" required value={email} autocomplete="email" />
+          </label>
+          {error && (
+            <div class="error-box">
+              <p>{error}</p>
+            </div>
+          )}
+          <button class="btn btn--primario" type="submit">Mandar link</button>
+        </form>
+      )
+    }
+    <a class="btn btn--link" href="/login">← Volver a iniciar sesión</a>
+  </section>
+</Layout>

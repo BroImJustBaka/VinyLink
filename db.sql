@@ -195,3 +195,270 @@ CREATE TABLE IF NOT EXISTS pago (
   actualizado_en             TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS pago_estado_idx ON pago(estado);
+
+-- ============================================================
+-- Back office completo
+-- Igual que la sección anterior: cada sentencia solo agrega lo que falta,
+-- así que corre en cada arranque sin borrar datos.
+-- ============================================================
+
+-- ------------------------------------------------------------
+-- Usuarios: roles del personal, bloqueo de cuentas y teléfono.
+--   CLIENTE   compra en la tienda
+--   ADMIN     todo el panel
+--   ALMACEN   catálogo, inventario, proveedores y envíos
+--   SOPORTE   pedidos (cancelar, notas), clientes, correos y links de pago
+--   FINANZAS  reportes, reembolsos, cupones y links de pago
+-- (Los permisos de cada rol viven en back/src/modules/auth/permisos.js.)
+-- ------------------------------------------------------------
+ALTER TABLE usuario DROP CONSTRAINT IF EXISTS usuario_rol_check;
+ALTER TABLE usuario ADD CONSTRAINT usuario_rol_check
+  CHECK (rol IN ('CLIENTE', 'ADMIN', 'ALMACEN', 'SOPORTE', 'FINANZAS'));
+ALTER TABLE usuario ADD COLUMN IF NOT EXISTS activo BOOLEAN NOT NULL DEFAULT TRUE;
+ALTER TABLE usuario ADD COLUMN IF NOT EXISTS telefono TEXT;
+
+-- Restablecer contraseña: token de un solo uso (se guarda su SHA-256) que vence en 1 hora.
+CREATE TABLE IF NOT EXISTS restablecimiento (
+  token_hash TEXT PRIMARY KEY,
+  usuario_id INTEGER NOT NULL REFERENCES usuario(id)
+    ON DELETE CASCADE ON UPDATE CASCADE,
+  creado_en  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  expira_en  TIMESTAMPTZ NOT NULL,
+  usado_en   TIMESTAMPTZ
+);
+
+-- Libreta de direcciones del cliente (Usuario 1 ── N Direccion).
+CREATE TABLE IF NOT EXISTS direccion (
+  id          SERIAL PRIMARY KEY,
+  usuario_id  INTEGER NOT NULL REFERENCES usuario(id)
+    ON DELETE CASCADE ON UPDATE CASCADE,
+  nombre      TEXT NOT NULL,
+  telefono    TEXT NOT NULL,
+  calle       TEXT NOT NULL,
+  colonia     TEXT NOT NULL,
+  ciudad      TEXT NOT NULL,
+  estado      TEXT NOT NULL,
+  cp          TEXT NOT NULL CHECK (cp ~ '^[0-9]{5}$'),
+  referencias TEXT,
+  creada_en   TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS direccion_usuario_idx ON direccion(usuario_id);
+
+-- ------------------------------------------------------------
+-- Catálogo: productos activos/inactivos, SKU, stock mínimo e imágenes subidas.
+-- Un producto inactivo no se ve en la tienda ni se puede comprar, pero
+-- conserva su historial (es la alternativa a borrarlo si ya tiene pedidos).
+-- ------------------------------------------------------------
+ALTER TABLE producto ADD COLUMN IF NOT EXISTS activo BOOLEAN NOT NULL DEFAULT TRUE;
+ALTER TABLE producto ADD COLUMN IF NOT EXISTS sku TEXT;
+ALTER TABLE producto ADD COLUMN IF NOT EXISTS stock_minimo INTEGER NOT NULL DEFAULT 5
+  CHECK (stock_minimo >= 0);
+ALTER TABLE producto ADD COLUMN IF NOT EXISTS creado_en TIMESTAMPTZ NOT NULL DEFAULT NOW();
+CREATE UNIQUE INDEX IF NOT EXISTS producto_sku_idx ON producto(upper(sku)) WHERE sku IS NOT NULL;
+CREATE INDEX IF NOT EXISTS producto_categoria_idx ON producto(categoria_id);
+
+-- Imágenes subidas desde el panel. Se guardan en la base (BYTEA) para que
+-- funcionen igual en local y en cualquier hosting, sin un disco ni un
+-- servicio extra. Se sirven en GET /imagenes/:id.
+CREATE TABLE IF NOT EXISTS imagen (
+  id         SERIAL PRIMARY KEY,
+  nombre     TEXT NOT NULL,
+  tipo       TEXT NOT NULL CHECK (tipo IN ('image/jpeg', 'image/png', 'image/webp', 'image/gif')),
+  bytes      INTEGER NOT NULL CHECK (bytes > 0),
+  datos      BYTEA NOT NULL,
+  usuario_id INTEGER REFERENCES usuario(id) ON DELETE SET NULL ON UPDATE CASCADE,
+  creado_en  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- ------------------------------------------------------------
+-- Inventario: proveedores y bitácora de movimientos (kárdex).
+-- Cada cambio de stock deja un renglón: quién, cuándo, cuánto y por qué.
+-- ------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS proveedor (
+  id        SERIAL PRIMARY KEY,
+  nombre    TEXT NOT NULL,
+  contacto  TEXT,
+  email     TEXT,
+  telefono  TEXT,
+  notas     TEXT,
+  activo    BOOLEAN NOT NULL DEFAULT TRUE,
+  creado_en TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS proveedor_nombre_idx ON proveedor(lower(nombre));
+
+--   inicial      stock con el que se dio de alta el producto
+--   entrada      llegó mercancía (de un proveedor)
+--   ajuste       corrección manual (conteo físico, merma, daño...)
+--   venta        se apartó para un pedido
+--   cancelacion  regresó porque el pedido se canceló
+--   reembolso    regresó porque el pedido se reembolsó
+CREATE TABLE IF NOT EXISTS movimiento_inventario (
+  id               SERIAL PRIMARY KEY,
+  producto_id      INTEGER NOT NULL REFERENCES producto(id)
+    ON DELETE CASCADE ON UPDATE CASCADE,
+  tipo             TEXT NOT NULL
+    CHECK (tipo IN ('inicial', 'entrada', 'ajuste', 'venta', 'cancelacion', 'reembolso')),
+  cantidad         INTEGER NOT NULL,          -- positiva entra, negativa sale
+  stock_resultante INTEGER NOT NULL CHECK (stock_resultante >= 0),
+  pedido_id        INTEGER REFERENCES pedido(id) ON DELETE SET NULL ON UPDATE CASCADE,
+  proveedor_id     INTEGER REFERENCES proveedor(id) ON DELETE SET NULL ON UPDATE CASCADE,
+  costo_unitario   DOUBLE PRECISION CHECK (costo_unitario IS NULL OR costo_unitario >= 0),
+  usuario_id       INTEGER REFERENCES usuario(id) ON DELETE SET NULL ON UPDATE CASCADE,
+  motivo           TEXT,
+  creado_en        TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS movimiento_producto_idx ON movimiento_inventario(producto_id, creado_en DESC);
+CREATE INDEX IF NOT EXISTS movimiento_fecha_idx ON movimiento_inventario(creado_en DESC);
+
+-- Los productos que ya existían arrancan su kárdex con su stock actual.
+INSERT INTO movimiento_inventario (producto_id, tipo, cantidad, stock_resultante, motivo)
+SELECT p.id, 'inicial', p.stock, p.stock, 'Inventario inicial'
+  FROM producto p
+ WHERE NOT EXISTS (SELECT 1 FROM movimiento_inventario m WHERE m.producto_id = p.id);
+
+-- ------------------------------------------------------------
+-- Cupones de descuento.
+--   porcentaje    valor = % de descuento sobre el subtotal (1 a 100)
+--   monto         valor = pesos que se descuentan
+--   envio_gratis  no descuenta productos; quita el costo de envío
+-- ------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS cupon (
+  id               SERIAL PRIMARY KEY,
+  codigo           TEXT NOT NULL CHECK (codigo ~ '^[A-Z0-9_-]{3,30}$'),
+  descripcion      TEXT,
+  tipo             TEXT NOT NULL CHECK (tipo IN ('porcentaje', 'monto', 'envio_gratis')),
+  valor            DOUBLE PRECISION NOT NULL DEFAULT 0 CHECK (valor >= 0),
+  minimo_compra    DOUBLE PRECISION NOT NULL DEFAULT 0 CHECK (minimo_compra >= 0),
+  usos_maximos     INTEGER CHECK (usos_maximos IS NULL OR usos_maximos > 0),
+  usos_por_cliente INTEGER CHECK (usos_por_cliente IS NULL OR usos_por_cliente > 0),
+  vigente_desde    TIMESTAMPTZ,
+  vigente_hasta    TIMESTAMPTZ,
+  activo           BOOLEAN NOT NULL DEFAULT TRUE,
+  creado_en        TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS cupon_codigo_idx ON cupon(codigo);
+
+INSERT INTO cupon (codigo, descripcion, tipo, valor, minimo_compra)
+SELECT * FROM (VALUES
+  ('BIENVENIDA10', '10% de descuento en tu compra', 'porcentaje', 10.0, 0.0),
+  ('ENVIOGRATIS', 'Envío gratis sin mínimo de compra', 'envio_gratis', 0.0, 0.0)
+) AS v(codigo, descripcion, tipo, valor, minimo_compra)
+WHERE NOT EXISTS (SELECT 1 FROM cupon);
+
+-- ------------------------------------------------------------
+-- Pedido: desglose del total, cupón, dirección y datos del envío.
+--   total = subtotal - descuento + costo_envio
+-- `envio` guarda una COPIA de la dirección (si el cliente la edita o la
+-- borra de su libreta después, el pedido conserva a dónde se mandó).
+-- ------------------------------------------------------------
+ALTER TABLE pedido ADD COLUMN IF NOT EXISTS subtotal DOUBLE PRECISION;
+UPDATE pedido SET subtotal = total WHERE subtotal IS NULL;
+ALTER TABLE pedido ADD COLUMN IF NOT EXISTS descuento DOUBLE PRECISION NOT NULL DEFAULT 0
+  CHECK (descuento >= 0);
+ALTER TABLE pedido ADD COLUMN IF NOT EXISTS costo_envio DOUBLE PRECISION NOT NULL DEFAULT 0
+  CHECK (costo_envio >= 0);
+ALTER TABLE pedido ADD COLUMN IF NOT EXISTS cupon_id INTEGER REFERENCES cupon(id)
+  ON DELETE SET NULL ON UPDATE CASCADE;
+ALTER TABLE pedido ADD COLUMN IF NOT EXISTS envio JSONB;
+ALTER TABLE pedido ADD COLUMN IF NOT EXISTS paqueteria TEXT;
+ALTER TABLE pedido ADD COLUMN IF NOT EXISTS numero_guia TEXT;
+ALTER TABLE pedido ADD COLUMN IF NOT EXISTS enviado_en TIMESTAMPTZ;
+ALTER TABLE pedido ADD COLUMN IF NOT EXISTS entregado_en TIMESTAMPTZ;
+ALTER TABLE pedido ADD COLUMN IF NOT EXISTS monto_reembolsado DOUBLE PRECISION NOT NULL DEFAULT 0
+  CHECK (monto_reembolsado >= 0);
+CREATE INDEX IF NOT EXISTS pedido_cupon_idx ON pedido(cupon_id) WHERE cupon_id IS NOT NULL;
+
+-- Línea de tiempo del pedido: cada cambio de estado (quién y cuándo)...
+CREATE TABLE IF NOT EXISTS historial_pedido (
+  id              SERIAL PRIMARY KEY,
+  pedido_id       INTEGER NOT NULL REFERENCES pedido(id)
+    ON DELETE CASCADE ON UPDATE CASCADE,
+  estado_anterior TEXT,
+  estado_nuevo    TEXT NOT NULL,
+  usuario_id      INTEGER REFERENCES usuario(id) ON DELETE SET NULL ON UPDATE CASCADE,
+  comentario      TEXT,
+  creado_en       TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS historial_pedido_idx ON historial_pedido(pedido_id, creado_en);
+
+-- ...y las notas internas que escribe el personal (el cliente no las ve).
+CREATE TABLE IF NOT EXISTS nota_pedido (
+  id         SERIAL PRIMARY KEY,
+  pedido_id  INTEGER NOT NULL REFERENCES pedido(id)
+    ON DELETE CASCADE ON UPDATE CASCADE,
+  usuario_id INTEGER REFERENCES usuario(id) ON DELETE SET NULL ON UPDATE CASCADE,
+  texto      TEXT NOT NULL CHECK (length(texto) BETWEEN 1 AND 2000),
+  creado_en  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS nota_pedido_idx ON nota_pedido(pedido_id, creado_en);
+
+-- Reembolsos (totales o parciales) hechos desde el panel.
+CREATE TABLE IF NOT EXISTS reembolso (
+  id                  SERIAL PRIMARY KEY,
+  pedido_id           INTEGER NOT NULL REFERENCES pedido(id)
+    ON DELETE CASCADE ON UPDATE CASCADE,
+  monto_centavos      INTEGER NOT NULL CHECK (monto_centavos > 0),
+  parcial             BOOLEAN NOT NULL,
+  repuso_stock        BOOLEAN NOT NULL DEFAULT FALSE,
+  motivo              TEXT,
+  stripe_reembolso_id TEXT,
+  usuario_id          INTEGER REFERENCES usuario(id) ON DELETE SET NULL ON UPDATE CASCADE,
+  creado_en           TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS reembolso_pedido_idx ON reembolso(pedido_id);
+
+-- ------------------------------------------------------------
+-- Bitácora de auditoría: qué hizo cada persona del personal en el panel.
+-- `usuario_nombre` se copia para que el registro siga legible aunque la
+-- cuenta se borre después.
+-- ------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS bitacora (
+  id             BIGSERIAL PRIMARY KEY,
+  usuario_id     INTEGER REFERENCES usuario(id) ON DELETE SET NULL ON UPDATE CASCADE,
+  usuario_nombre TEXT,
+  accion         TEXT NOT NULL,
+  entidad        TEXT NOT NULL,
+  entidad_id     TEXT,
+  detalle        JSONB NOT NULL DEFAULT '{}'::jsonb,
+  creado_en      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS bitacora_fecha_idx ON bitacora(creado_en DESC);
+CREATE INDEX IF NOT EXISTS bitacora_entidad_idx ON bitacora(entidad, entidad_id);
+
+-- ------------------------------------------------------------
+-- Correos que manda la tienda (bandeja de salida). Se guardan todos: si no
+-- hay servidor SMTP configurado quedan como "simulado" y se pueden leer
+-- desde el panel, así se prueban sin mandar correos reales.
+-- ------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS correo (
+  id         SERIAL PRIMARY KEY,
+  para       TEXT NOT NULL,
+  asunto     TEXT NOT NULL,
+  html       TEXT NOT NULL,
+  tipo       TEXT NOT NULL,
+  pedido_id  INTEGER REFERENCES pedido(id) ON DELETE SET NULL ON UPDATE CASCADE,
+  usuario_id INTEGER REFERENCES usuario(id) ON DELETE SET NULL ON UPDATE CASCADE,
+  estado     TEXT NOT NULL DEFAULT 'pendiente'
+    CHECK (estado IN ('pendiente', 'enviado', 'simulado', 'error')),
+  error      TEXT,
+  creado_en  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  enviado_en TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS correo_fecha_idx ON correo(creado_en DESC);
+
+-- ------------------------------------------------------------
+-- Configuración de la tienda (clave → valor JSON), editable desde el panel.
+-- ------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS configuracion (
+  clave          TEXT PRIMARY KEY,
+  valor          JSONB NOT NULL,
+  actualizado_en TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+INSERT INTO configuracion (clave, valor) VALUES
+  ('nombre_tienda', '"VinyLink"'),
+  ('email_contacto', '"contacto@vinylink.mx"'),
+  ('costo_envio', '149'),
+  ('envio_gratis_desde', '999'),
+  ('iva_porcentaje', '16'),
+  ('paqueterias', '["Estafeta", "DHL", "FedEx", "Correos de México"]')
+ON CONFLICT (clave) DO NOTHING;

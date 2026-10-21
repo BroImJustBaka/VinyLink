@@ -10,6 +10,16 @@ import * as pagos from "./modules/pagos/typeDefs.js";
 import * as pagosR from "./modules/pagos/resolvers.js";
 import * as admin from "./modules/admin/typeDefs.js";
 import * as adminR from "./modules/admin/resolvers.js";
+import * as inventario from "./modules/inventario/typeDefs.js";
+import * as inventarioR from "./modules/inventario/resolvers.js";
+import * as cupones from "./modules/cupones/typeDefs.js";
+import * as cuponesR from "./modules/cupones/resolvers.js";
+import * as configuracion from "./modules/configuracion/typeDefs.js";
+import * as configuracionR from "./modules/configuracion/resolvers.js";
+import * as notificaciones from "./modules/notificaciones/typeDefs.js";
+import * as notificacionesR from "./modules/notificaciones/resolvers.js";
+import * as tiempoReal from "./modules/tiempo-real/typeDefs.js";
+import * as tiempoRealR from "./modules/tiempo-real/resolvers.js";
 
 const base = `#graphql
   type Query
@@ -23,6 +33,11 @@ export const typeDefs = [
   auth.typeDefs,
   pagos.typeDefs,
   admin.typeDefs,
+  inventario.typeDefs,
+  cupones.typeDefs,
+  configuracion.typeDefs,
+  notificaciones.typeDefs,
+  tiempoReal.typeDefs,
 ];
 
 function mergeResolvers(...mapas) {
@@ -45,5 +60,10 @@ export const resolvers = mergeResolvers(
   pedidosR.resolvers,
   authR.resolvers,
   pagosR.resolvers,
-  adminR.resolvers
+  adminR.resolvers,
+  inventarioR.resolvers,
+  cuponesR.resolvers,
+  configuracionR.resolvers,
+  notificacionesR.resolvers,
+  tiempoRealR.resolvers
 );

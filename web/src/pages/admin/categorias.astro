@@ -1,0 +1,149 @@
+---
+// Panel admin → Categorías. Lista con cuántos productos tiene cada una,
+// formulario para crear y edición en línea (cada fila es su propio
+// formulario). Una categoría solo se puede borrar si está vacía.
+import Layout from "../../layouts/Layout.astro";
+import AdminNav from "../../components/admin/AdminNav.astro";
+import { graphqlServer } from "../../lib/graphql";
+import {
+  QUERY_CATEGORIAS_ADMIN,
+  MUTATION_CREAR_CATEGORIA,
+  MUTATION_ACTUALIZAR_CATEGORIA,
+  MUTATION_ELIMINAR_CATEGORIA,
+} from "../../lib/queries/admin.js";
+
+const AVISOS: Record<string, string> = {
+  creada: "Categoría creada.",
+  guardada: "Cambios guardados.",
+  eliminada: "Categoría eliminada.",
+};
+
+let error: string | null = null;
+let borrador = { nombre: "", descripcion: "", imagen: "" };
+
+if (Astro.request.method === "POST") {
+  const form = await Astro.request.formData();
+  const accion = String(form.get("accion"));
+  const data = {
+    nombre: String(form.get("nombre") ?? ""),
+    descripcion: String(form.get("descripcion") ?? ""),
+    imagen: String(form.get("imagen") ?? ""),
+  };
+  try {
+    if (accion === "crear") {
+      borrador = data;
+      await graphqlServer(Astro.cookies, MUTATION_CREAR_CATEGORIA, { data });
+      return Astro.redirect("/admin/categorias?ok=creada", 303);
+    }
+    if (accion === "guardar") {
+      await graphqlServer(Astro.cookies, MUTATION_ACTUALIZAR_CATEGORIA, { id: String(form.get("id")), data });
+      return Astro.redirect("/admin/categorias?ok=guardada", 303);
+    }
+    await graphqlServer(Astro.cookies, MUTATION_ELIMINAR_CATEGORIA, { id: String(form.get("id")) });
+    return Astro.redirect("/admin/categorias?ok=eliminada", 303);
+  } catch (err) {
+    error = err instanceof Error ? err.message : String(err);
+  }
+}
+
+let categorias: any[] = [];
+try {
+  ({ categorias } = await graphqlServer(Astro.cookies, QUERY_CATEGORIAS_ADMIN));
+} catch (err) {
+  error ??= err instanceof Error ? err.message : String(err);
+}
+const aviso = AVISOS[Astro.url.searchParams.get("ok") ?? ""] ?? null;
+---
+
+<Layout title="Categorías · Admin">
+  <Fragment slot="sidebar"><AdminNav /></Fragment>
+
+  <section class="admin">
+    <div class="admin__cabecera">
+      <div>
+        <h2>Categorías</h2>
+        <p class="muted">{categorias.length} categorías en la tienda.</p>
+      </div>
+    </div>
+
+    {aviso && <div class="confirmacion-box"><span>✓ {aviso}</span></div>}
+    {
+      error && (
+        <div class="error-box" role="alert">
+          <p>{error}</p>
+        </div>
+      )
+    }
+
+    <div class="panel-card">
+      <h3>Nueva categoría</h3>
+      <form method="post" class="formulario-linea">
+        <input type="hidden" name="accion" value="crear" />
+        <label>
+          Nombre
+          <input type="text" name="nombre" required minlength="2" maxlength="60" value={borrador.nombre} />
+        </label>
+        <label class="formulario-linea__ancho">
+          Descripción
+          <input type="text" name="descripcion" required maxlength="200" value={borrador.descripcion} />
+        </label>
+        <label class="formulario-linea__ancho">
+          URL de la imagen
+          <input type="url" name="imagen" required value={borrador.imagen} placeholder="https://..." />
+        </label>
+        <button class="btn btn--primario" type="submit">Crear</button>
+      </form>
+      <p class="muted">Para usar una imagen propia, súbela en el formulario de un producto y copia su URL.</p>
+    </div>
+
+    <div class="panel-card">
+      <div class="tabla-scroll">
+        <table class="tabla">
+          <thead>
+            <tr>
+              <th scope="col">Imagen</th>
+              <th scope="col">Categoría</th>
+              <th scope="col" class="num">Productos</th>
+              <th scope="col"><span class="sr-only">Acciones</span></th>
+            </tr>
+          </thead>
+          <tbody>
+            {
+              categorias.map((c) => (
+                <tr>
+                  <td>
+                    <img class="miniatura" src={c.imagen} alt="" />
+                  </td>
+                  <td>
+                    <form method="post" class="formulario-linea" id={`cat-${c.id}`}>
+                      <input type="hidden" name="accion" value="guardar" />
+                      <input type="hidden" name="id" value={c.id} />
+                      <input type="text" name="nombre" required minlength="2" maxlength="60" value={c.nombre} aria-label="Nombre" />
+                      <input type="text" name="descripcion" required maxlength="200" value={c.descripcion} aria-label="Descripción" class="formulario-linea__ancho" />
+                      <input type="url" name="imagen" required value={c.imagen} aria-label="URL de la imagen" class="formulario-linea__ancho" />
+                    </form>
+                  </td>
+                  <td class="num">
+                    <a href={`/admin/productos?categoria=${c.id}`}>{c.totalProductos}</a>
+                  </td>
+                  <td class="tabla__acciones">
+                    <button class="btn btn--chico" type="submit" form={`cat-${c.id}`}>
+                      Guardar
+                    </button>
+                    <form method="post" onsubmit="return confirm('¿Eliminar esta categoría?')">
+                      <input type="hidden" name="accion" value="eliminar" />
+                      <input type="hidden" name="id" value={c.id} />
+                      <button class="btn btn--chico btn--peligro" type="submit" disabled={c.totalProductos > 0} title={c.totalProductos > 0 ? "Tiene productos: muévelos a otra categoría primero" : undefined}>
+                        Eliminar
+                      </button>
+                    </form>
+                  </td>
+                </tr>
+              ))
+            }
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+</Layout>

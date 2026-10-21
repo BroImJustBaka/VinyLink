@@ -1,12 +1,13 @@
 ---
 // Dueño: Persona B. Checkout con pagos de Stripe.
 // Requiere sesión: el middleware de C redirige a /login si no hay usuario.
-// La configuración de pagos (llave publicable, modo de prueba, límites) se
-// pide al backend aquí en el servidor y se le pasa a la isla.
+// La configuración de pagos (llave publicable, modo de prueba, límites) y la
+// libreta de direcciones del cliente se piden al backend aquí en el servidor
+// y se le pasan a la isla.
 import Layout from "../layouts/Layout.astro";
 import CheckoutForm from "../components/carrito/CheckoutForm.jsx";
 import { graphqlServer } from "../lib/graphql";
-import { QUERY_CONFIG_PAGOS } from "../lib/queries/pagos.js";
+import { QUERY_CONFIG_PAGOS, QUERY_MIS_DIRECCIONES } from "../lib/queries/pagos.js";
 
 const user = Astro.locals.user;
 
@@ -17,8 +18,14 @@ try {
 } catch (err) {
   errorConfig = err instanceof Error ? err.message : String(err);
 }
+let direcciones = [];
+try {
+  ({ misDirecciones: direcciones } = await graphqlServer(Astro.cookies, QUERY_MIS_DIRECCIONES));
+} catch {
+  // Sin libreta el checkout funciona igual: se escribe la dirección a mano.
+}
 ---
 
 <Layout title="Checkout">
-  <CheckoutForm client:only="react" user={user} pagos={pagos} errorConfig={errorConfig} />
+  <CheckoutForm client:only="react" user={user} pagos={pagos} errorConfig={errorConfig} direcciones={direcciones} />
 </Layout>

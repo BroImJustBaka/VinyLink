@@ -59,3 +59,26 @@ export const MUTATION_CANCELAR_PEDIDO = `
     }
   }
 `;
+
+// Desglose del carrito calculado por el backend (subtotal, cupón, envío, IVA).
+export const QUERY_COTIZAR = `
+  query CotizarPedido($data: PedidoInput!) {
+    cotizarPedido(data: $data) {
+      subtotal
+      descuento
+      costoEnvio
+      total
+      iva
+      cupon
+      cuponDescripcion
+      errorCupon
+      faltaParaEnvioGratis
+    }
+  }
+`;
+
+export const QUERY_MIS_DIRECCIONES = `
+  query MisDirecciones {
+    misDirecciones { id nombre telefono calle colonia ciudad estado cp referencias }
+  }
+`;

@@ -45,6 +45,7 @@ Object.assign(process.env, {
   STRIPE_PUBLISHABLE_KEY: "pk_test_simulado",
   STRIPE_WEBHOOK_SECRET: WHSEC,
   WEB_URL: "http://localhost:4321",
+  SMTP_HOST: "", // los correos quedan como "simulado" en la tabla `correo`
 });
 
 // Desde aquí, quien haga `import Stripe from "stripe"` recibe el simulado.
@@ -105,6 +106,9 @@ const crear = (pago, data, tok) => intenta(() => gql(CREAR, { data, pago }, tok)
 await db.query("UPDATE producto SET stock = 50 WHERE id IN (1, 2, 3, 7, 8)");
 const cliente = await login("invitado@tienda.com", "invitado123");
 const admin = await login("admin@tienda.com", "admin123");
+// Las pruebas de pagos comparan montos exactos: sin costo de envío. El
+// envío se prueba aparte en probar-backoffice.mjs.
+await gql(`mutation { actualizarConfiguracion(data: { costoEnvio: 0 }) { costoEnvio } }`, {}, admin);
 const agregarAlCarrito = (pid) => gql(`mutation($p: ID!){ agregarAlCarrito(productoId: $p, cantidad: 1) { id } }`, { p: String(pid) }, cliente);
 
 // ================================================================= PRUEBAS

@@ -1,13 +1,23 @@
 ---
-// Panel admin → Clientes: cuánto ha comprado cada usuario y su rol.
-// El rol se cambia con un formulario POST (no se puede cambiar el propio).
+// Panel admin → Clientes: búsqueda, filtros (rol, bloqueados) y paginación.
+// Cada usuario muestra lo que ha comprado y abre su ficha (/admin/clientes/5).
+// El rol se cambia aquí mismo solo si tu rol tiene el permiso "usuarios"
+// (ADMIN); no se puede cambiar el propio.
 import Layout from "../../layouts/Layout.astro";
 import AdminNav from "../../components/admin/AdminNav.astro";
 import { graphqlServer } from "../../lib/graphql";
 import { QUERY_ADMIN_CLIENTES, MUTATION_CAMBIAR_ROL } from "../../lib/queries/admin.js";
 import { dinero, fecha } from "../../lib/formato.js";
+import { puede, NOMBRES_ROL } from "../../lib/permisos.js";
 
 const yo = Astro.locals.user!;
+const POR_PAGINA = 25;
+const params = Astro.url.searchParams;
+const buscar = (params.get("buscar") ?? "").trim() || null;
+const rol = params.get("rol") || null;
+const bloqueados = params.get("bloqueados") === "1";
+const pagina = Math.max(1, Number.parseInt(params.get("pagina") ?? "1", 10) || 1);
+const cambiaRoles = puede(yo, "usuarios");
 let error: string | null = null;
 
 if (Astro.request.method === "POST") {
@@ -17,19 +27,33 @@ if (Astro.request.method === "POST") {
       id: String(form.get("id")),
       rol: String(form.get("rol")),
     });
-    return Astro.redirect("/admin/clientes?ok=1", 303);
+    return Astro.redirect(`/admin/clientes?${new URLSearchParams({ ...Object.fromEntries(params), ok: "1" })}`, 303);
   } catch (err) {
     error = err instanceof Error ? err.message : String(err);
   }
 }
 
-let clientes: any[] = [];
+let resultado = { items: [] as any[], total: 0 };
 try {
-  ({ adminClientes: clientes } = await graphqlServer(Astro.cookies, QUERY_ADMIN_CLIENTES));
+  ({ adminClientes: resultado } = await graphqlServer(Astro.cookies, QUERY_ADMIN_CLIENTES, {
+    buscar,
+    rol,
+    bloqueados,
+    limite: POR_PAGINA,
+    offset: (pagina - 1) * POR_PAGINA,
+  }));
 } catch (err) {
   error ??= err instanceof Error ? err.message : String(err);
 }
-const aviso = Astro.url.searchParams.get("ok") ? "Rol actualizado." : null;
+const aviso = params.get("ok") ? "Rol actualizado." : null;
+const paginas = Math.max(1, Math.ceil(resultado.total / POR_PAGINA));
+const enlacePagina = (n: number) => {
+  const p = new URLSearchParams(params);
+  p.delete("ok");
+  p.set("pagina", String(n));
+  return `/admin/clientes?${p}`;
+};
+const hayFiltros = Boolean(buscar || rol || bloqueados);
 ---
 
 <Layout title="Clientes · Admin">
@@ -39,8 +63,17 @@ const aviso = Astro.url.searchParams.get("ok") ? "Rol actualizado." : null;
     <div class="admin__cabecera">
       <div>
         <h2>Clientes</h2>
-        <p class="muted">{clientes.length} usuarios registrados, ordenados por lo que han comprado.</p>
+        <p class="muted">
+          {resultado.total} usuarios{hayFiltros ? " con estos filtros" : ""}, ordenados por lo que han comprado.
+        </p>
       </div>
+      {
+        (puede(yo, "reportes") || puede(yo, "clientes")) && (
+          <a class="btn" href="/admin/exportar/clientes.csv" download>
+            ⬇ Exportar CSV
+          </a>
+        )
+      }
     </div>
 
     {aviso && <div class="confirmacion-box"><span>✓ {aviso}</span></div>}
@@ -52,8 +85,31 @@ const aviso = Astro.url.searchParams.get("ok") ? "Rol actualizado." : null;
       )
     }
 
+    <form class="filtros" method="get" action="/admin/clientes">
+      <label class="filtros__buscar">
+        Buscar
+        <input type="search" name="buscar" value={buscar ?? ""} placeholder="Nombre o email" />
+      </label>
+      <label>
+        Rol
+        <select name="rol">
+          <option value="">Todos</option>
+          {Object.entries(NOMBRES_ROL).map(([valor, nombre]) => (
+            <option value={valor} selected={valor === rol}>
+              {nombre}
+            </option>
+          ))}
+        </select>
+      </label>
+      <label class="casilla">
+        <input type="checkbox" name="bloqueados" value="1" checked={bloqueados} /> Solo bloqueados
+      </label>
+      <button class="btn btn--primario" type="submit">Filtrar</button>
+      {hayFiltros && <a class="btn btn--link" href="/admin/clientes">Quitar filtros</a>}
+    </form>
+
     {
-      clientes.length > 0 && (
+      resultado.items.length > 0 && (
         <div class="panel-card">
           <div class="tabla-scroll">
             <table class="tabla">
@@ -68,10 +124,11 @@ const aviso = Astro.url.searchParams.get("ok") ? "Rol actualizado." : null;
                 </tr>
               </thead>
               <tbody>
-                {clientes.map((c) => (
-                  <tr>
+                {resultado.items.map((c) => (
+                  <tr class:list={{ "fila--inactiva": !c.usuario.activo }}>
                     <td>
-                      {c.usuario.nombre}
+                      <a href={`/admin/clientes/${c.usuario.id}`}>{c.usuario.nombre}</a>
+                      {!c.usuario.activo && <span class="etiqueta etiqueta--peligro">Bloqueado</span>}
                       <span class="muted tabla__sub">{c.usuario.email}</span>
                     </td>
                     <td class="num">{c.pedidos}</td>
@@ -79,18 +136,20 @@ const aviso = Astro.url.searchParams.get("ok") ? "Rol actualizado." : null;
                     <td class="fecha">{fecha(c.ultimoPedido)}</td>
                     <td class="fecha">{fecha(c.creadoEn)}</td>
                     <td>
-                      {c.usuario.id === yo.id ? (
-                        <span class="muted">{c.usuario.rol} (tú)</span>
+                      {c.usuario.id === yo.id || !cambiaRoles ? (
+                        <span class="muted">
+                          {NOMBRES_ROL[c.usuario.rol as keyof typeof NOMBRES_ROL] ?? c.usuario.rol}
+                          {c.usuario.id === yo.id && " (tú)"}
+                        </span>
                       ) : (
-                        <form method="post" action="/admin/clientes" class="form-rol">
+                        <form method="post" class="form-rol">
                           <input type="hidden" name="id" value={c.usuario.id} />
                           <select name="rol" aria-label={`Rol de ${c.usuario.nombre}`}>
-                            <option value="CLIENTE" selected={c.usuario.rol === "CLIENTE"}>
-                              Cliente
-                            </option>
-                            <option value="ADMIN" selected={c.usuario.rol === "ADMIN"}>
-                              Admin
-                            </option>
+                            {Object.entries(NOMBRES_ROL).map(([valor, nombre]) => (
+                              <option value={valor} selected={c.usuario.rol === valor}>
+                                {nombre}
+                              </option>
+                            ))}
                           </select>
                           <button class="btn btn--chico" type="submit">
                             Guardar
@@ -104,6 +163,18 @@ const aviso = Astro.url.searchParams.get("ok") ? "Rol actualizado." : null;
             </table>
           </div>
         </div>
+      )
+    }
+
+    {
+      paginas > 1 && (
+        <nav class="paginacion" aria-label="Páginas">
+          {pagina > 1 ? <a class="btn" href={enlacePagina(pagina - 1)}>← Anterior</a> : <span />}
+          <span class="muted">
+            Página {pagina} de {paginas}
+          </span>
+          {pagina < paginas ? <a class="btn" href={enlacePagina(pagina + 1)}>Siguiente →</a> : <span />}
+        </nav>
       )
     }
   </section>

@@ -68,5 +68,6 @@ const query = next ? `?next=${encodeURIComponent(next)}` : "";
     <button class="btn btn--primario" type="submit">
       {modo === "login" ? "Entrar" : "Registrarme"}
     </button>
+    {modo === "login" && <a class="btn btn--link" href="/olvide">¿Olvidaste tu contraseña?</a>}
   </form>
 </section>

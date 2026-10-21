@@ -4,11 +4,14 @@ Tienda en línea de discos, audífonos e instrumentos musicales. El cliente
 explora el catálogo por categorías, busca productos, arma su carrito, crea una
 cuenta y paga su pedido con tarjeta de crédito o débito, efectivo en OXXO,
 transferencia SPEI o un link de pago (todo con Stripe). Después puede consultar
-su historial desde su perfil. Los administradores tienen un panel con
-estadísticas de ventas, pedidos, inventario, clientes y links de pago.
+su historial desde su perfil. El personal de la tienda tiene un **back office**
+completo: ventas y reportes, pedidos con envío y guía, catálogo, inventario con
+kárdex y proveedores, clientes, cupones, correos, bitácora de auditoría y
+configuración, con roles (Admin, Almacén, Soporte, Finanzas) y avisos en tiempo
+real por **GraphQL subscriptions** (WebSocket).
 
 - **Frontend:** [Astro](https://astro.build) con renderizado en servidor e islas de React.
-- **Backend:** API GraphQL con Apollo Server.
+- **Backend:** API GraphQL con Apollo Server; subscriptions con `graphql-ws` sobre WebSocket.
 - **Base de datos:** PostgreSQL (hospedada en [Neon](https://neon.tech)).
 - **Pagos:** [Stripe](https://stripe.com/mx) (modo de prueba para desarrollo).
 
@@ -20,8 +23,12 @@ estadísticas de ventas, pedidos, inventario, clientes y links de pago.
 | **Carrito** | Funciona sin cuenta (se guarda en el navegador). Con sesión se sincroniza con la base de datos y, al iniciar sesión, el carrito de invitado se fusiona con el guardado. |
 | **Pedidos** | El pedido nace "pendiente" con el stock apartado y pasa a "pagado" cuando Stripe confirma el cobro. Página `/pedido/[id]` con la ficha OXXO, la CLABE o el link, que se actualiza sola; historial en `/perfil`. |
 | **Pagos** | Crédito (con meses sin intereses), débito, OXXO, SPEI y link de pago. El backend comprueba que la tarjeta sea del tipo elegido, cancela y devuelve el stock de los pagos rechazados o vencidos, y recibe los avisos de Stripe por webhook. |
-| **Panel admin** | `/admin`: ingresos, ticket promedio, gráfica de productos más vendidos, ingresos por día y por método, stock bajo; gestión de pedidos (enviar, entregar, cancelar, reembolsar), productos, clientes y links de pago. |
-| **Cuentas** | Registro e inicio de sesión con contraseñas hasheadas (bcrypt), sesiones en base de datos y cookie `httpOnly`. Roles `CLIENTE` y `ADMIN`. |
+| **Envío y cupones** | El checkout pide la dirección (con libreta de direcciones del cliente) y acepta cupones (porcentaje, monto fijo o envío gratis). El backend cotiza subtotal, descuento, envío e IVA con el mismo cálculo con el que cobra. |
+| **Panel admin** | `/admin`: indicadores, gráficas y stock bajo; pedidos con dirección, paquetería y guía, línea de tiempo, notas internas y reembolsos totales o parciales; productos (SKU, activo/inactivo, subida de imágenes) y categorías; inventario con kárdex, entradas, ajustes y proveedores; clientes (ficha, bloqueo, link de contraseña); cupones; links de pago; reportes y CSV; correos; bitácora; configuración. |
+| **Roles y permisos** | `ADMIN`, `ALMACEN`, `SOPORTE` y `FINANZAS` ven solo las secciones de su rol; el backend revisa el permiso en cada operación (`requirePermiso`). |
+| **Tiempo real** | Subscriptions `pedidoActualizado`, `stockActualizado` y `eventosAdmin`: avisos en el panel (pedido nuevo, pago, stock bajo, acciones del personal), la página del pedido del cliente se actualiza sola y el stock del detalle de producto cambia en vivo. |
+| **Correos** | Confirmación, pago, envío con guía, cancelación, reembolso y recuperación de contraseña. Con SMTP se mandan de verdad; sin SMTP quedan "simulados" y se leen en `/admin/correos`. |
+| **Cuentas** | Registro e inicio de sesión con contraseñas hasheadas (bcrypt), sesiones en base de datos y cookie `httpOnly`. Recuperar contraseña por correo, editar perfil y cambiar contraseña. Cuentas bloqueables. |
 
 ## Rutas
 
@@ -34,17 +41,30 @@ estadísticas de ventas, pedidos, inventario, clientes y links de pago.
 | `/checkout` | Confirmar la compra | Requerida |
 | `/pedido/[id]` | Confirmación y detalle de un pedido propio | Requerida |
 | `/login`, `/registro` | Formularios de acceso (funcionan sin JavaScript) | — |
-| `/perfil` | Datos del usuario, historial de pedidos y cerrar sesión | Requerida |
+| `/olvide`, `/restablecer?token=` | Pedir y usar el link para cambiar la contraseña | — |
+| `/perfil` | Historial de pedidos, datos, contraseña, libreta de direcciones y cerrar sesión | Requerida |
 | `/logout` | Cierra la sesión (solo `POST`) | — |
 | `/pago/gracias` | A donde regresa Stripe después de pagar un link | — |
-| `/admin` | Resumen: indicadores y gráficas (`?dias=7`, `30` o `90`) | ADMIN |
-| `/admin/pedidos`, `/admin/pedidos/[id]` | Pedidos con filtros; detalle y acciones | ADMIN |
-| `/admin/productos`, `/admin/productos/[id]` | Inventario; crear (`nuevo`) y editar | ADMIN |
-| `/admin/clientes` | Compras por cliente y cambio de rol | ADMIN |
-| `/admin/links` | Crear links de pago para un cliente | ADMIN |
+| `/admin` | Resumen: indicadores y gráficas (`?dias=7`, `30` o `90`) | reportes |
+| `/admin/pedidos`, `/admin/pedidos/[id]` | Pedidos con filtros; detalle, envío, línea de tiempo y acciones | pedidos.ver |
+| `/admin/productos`, `/admin/productos/[id]` | Productos; crear (`nuevo`) y editar, con subida de imagen | catalogo |
+| `/admin/categorias` | Crear, editar y borrar categorías | catalogo |
+| `/admin/inventario` | Kárdex, entradas de mercancía y ajustes (`?producto=5`) | inventario |
+| `/admin/proveedores` | Proveedores | inventario |
+| `/admin/clientes`, `/admin/clientes/[id]` | Búsqueda, ficha, bloqueo y cambio de rol | clientes |
+| `/admin/cupones` | Cupones de descuento | cupones |
+| `/admin/links` | Crear links de pago para un cliente | links |
+| `/admin/reportes` | Ventas por categoría y descargas CSV | reportes |
+| `/admin/exportar/[tipo].csv` | Descarga de un reporte (`?desde=&hasta=`) | según el reporte |
+| `/admin/correos` | Bandeja de salida con vista previa (`?ver=5`) | correos |
+| `/admin/bitacora` | Bitácora de auditoría | bitacora (ADMIN) |
+| `/admin/configuracion` | Envío, IVA, paqueterías y tabla de permisos por rol | configuracion (ADMIN) |
+| `/imagenes/[id]` | Imágenes subidas desde el panel | — |
 
 Si una ruta protegida se abre sin sesión, se redirige a `/login?next=<ruta>` y,
-al entrar, se regresa a donde estaba. Un cliente que abre `/admin` ve un 404.
+al entrar, se regresa a donde estaba. Un cliente que abre `/admin` ve un 404;
+alguien del personal que abre una sección que su rol no tiene, también (y en
+`/admin` se le manda a su primera sección).
 
 ## Estructura
 
@@ -59,8 +79,15 @@ back/                     API GraphQL (Apollo Server + pg)
       pedidos/            carrito en DB, pedidos, historial e inventario (servicio.js)
       auth/               usuarios, sesiones, login/registro, requireUser/requireAdmin
       pagos/              Stripe: cobros, webhook y revisión de pagos vencidos
-      admin/              estadísticas y acciones del panel
-  pruebas/                pruebas automáticas con Stripe simulado (npm run probar-pagos)
+      admin/              estadísticas, clientes, envíos, reembolsos, bitácora y CSV
+      inventario/         kárdex (moverStock), entradas, ajustes y proveedores
+      cupones/            cupones y su validación
+      configuracion/      envío, IVA y paqueterías (tabla configuracion)
+      notificaciones/     correos (nodemailer o simulados) y sus plantillas
+      tiempo-real/        subscriptions GraphQL y tickets del WebSocket
+    lib/pubsub.js         eventos en tiempo real (PubSub)
+    lib/bitacora.js       registrar() de la bitácora de auditoría
+  pruebas/                pruebas automáticas (npm run probar) y demo (npm run demo)
 web/                      Frontend Astro (SSR con @astrojs/node)
   src/
     pages/                rutas (ver tabla de arriba) + api/graphql.ts (proxy)
@@ -70,10 +97,12 @@ web/                      Frontend Astro (SSR con @astrojs/node)
       carrito/            CartBadge, CartView y CheckoutForm (islas)
       auth/               UserMenu, AuthForm
       pagos/              PanelPago (ficha/CLABE/link) y SeguimientoPago (isla)
-      admin/              AdminNav, Kpi y gráficas (GraficaBarras, GraficaColumnas)
+      admin/              AdminNav, AvisosAdmin (isla en vivo), Kpi y gráficas
     stores/cart.js        store de Zustand del carrito
     lib/graphql.ts        graphqlServer() y graphqlClient()
     lib/formato.js        dinero, fechas y nombres de estados y métodos de pago
+    lib/permisos.js       secciones del panel y el permiso de cada una
+    lib/tiempoReal.js     cliente graphql-ws del navegador (suscribirse)
     middleware.ts         llena Astro.locals.user y protege rutas
     styles/               estilos globales y de la app
 db.sql                    esquema y datos semilla (idempotente)
@@ -126,7 +155,12 @@ cp .env.example .env
 npm run dev
 ```
 
-`web/.env` solo necesita `GRAPHQL_URL` (por defecto `http://localhost:4000/`).
+`web/.env` necesita `GRAPHQL_URL` (por defecto `http://localhost:4000/`) y,
+para el tiempo real, `PUBLIC_GRAPHQL_WS_URL` (por defecto `ws://localhost:4000/graphql`).
+
+**Demo sin Neon ni Stripe:** `cd back && npm run demo` levanta el backend en el
+puerto 4000 con una base temporal y Stripe simulado (OXXO, SPEI y links
+funcionan; tarjeta no). Al cerrarlo se borra todo.
 
 **Usuarios de prueba** (vienen en `db.sql`):
 
@@ -134,6 +168,10 @@ npm run dev
 |---|---|---|
 | `invitado@tienda.com` | `invitado123` | CLIENTE |
 | `admin@tienda.com` | `admin123` | ADMIN |
+
+Para probar los otros roles, registra una cuenta y cámbiale el rol en
+`/admin/clientes` (Almacén, Soporte o Finanzas). Cupones de ejemplo:
+`BIENVENIDA10` (10 %) y `ENVIOGRATIS`.
 
 Nunca subas los archivos `.env` al repositorio: contienen la contraseña de la base de datos
 y la llave secreta de Stripe.
@@ -175,12 +213,14 @@ instante y `expire_immediately@test.com` vence. SPEI tiene un botón
 
 ```bash
 cd back
-npm run probar-pagos
+npm run probar
 ```
 
 Levanta un PostgreSQL temporal y el backend con un Stripe simulado (no necesita
-cuenta, internet ni toca Neon) y recorre los cinco métodos de pago, rechazos,
-vencimientos, reembolsos, webhooks, permisos y el panel admin.
+cuenta, internet ni toca Neon). `probar-pagos` recorre los cinco métodos de
+pago, rechazos, vencimientos, reembolsos y webhooks; `probar-backoffice`, los
+roles, catálogo, kárdex, cupones, envíos, reembolsos parciales, clientes,
+contraseñas, correos, bitácora, CSV y las subscriptions por WebSocket.
 
 ## Producción
 
@@ -192,8 +232,11 @@ node dist/server/entry.mjs     # servidor Node standalone
 
 `web` (adaptador `@astrojs/node`) y `back` pueden desplegarse como dos servicios
 Node (por ejemplo en Render o Railway). En `web` define `GRAPHQL_URL` con la URL
-pública del backend; en `back`, `DATABASE_URL`, las variables de Stripe,
-`WEB_URL` con la URL pública del frontend y, opcionalmente, `PORT`. En el
+pública del backend y `PUBLIC_GRAPHQL_WS_URL` con `wss://<tu-backend>/graphql`
+(se usa al compilar); en `back`, `DATABASE_URL`, las variables de Stripe,
+`WEB_URL` con la URL pública del frontend, las de SMTP si quieres mandar
+correos y, opcionalmente, `PORT`. El tiempo real usa un PubSub en memoria:
+con un solo proceso del backend funciona tal cual. En el
 Dashboard de Stripe agrega un webhook hacia `https://<tu-backend>/webhooks/stripe`
 y usa su secreto en `STRIPE_WEBHOOK_SECRET`. Para cobrar dinero real hay que
 activar la cuenta de Stripe y cambiar las llaves `sk_test_`/`pk_test_` por
@@ -203,17 +246,35 @@ activar la cuenta de Stripe y cambiar las llaves `sk_test_`/`pk_test_` por
 
 **Consultas:** `categorias`, `categoria(id)`, `productos(limit, offset, categoriaId)`,
 `producto(id)`, `buscarProductos(texto, categoriaId)`, `carrito`, `misPedidos`,
-`pedido(id)`, `pedidos` (admin), `me`, `configPagos`, y para el panel (admin)
-`adminResumen`, `adminTopProductos`, `adminVentasPorDia`, `adminVentasPorMetodo`,
-`adminStockBajo`, `adminPedidos`, `adminClientes`.
+`pedido(id)`, `cotizarPedido(data)`, `misDirecciones`, `me`, `configPagos`,
+`configuracionTienda`, y para el panel `pedidos`, `adminResumen`,
+`adminTopProductos`, `adminVentasPorDia`, `adminVentasPorMetodo`,
+`adminVentasPorCategoria`, `adminStockBajo`, `adminPedidos`, `adminClientes`,
+`adminCliente`, `adminMovimientos`, `adminResumenInventario`, `proveedores`,
+`adminCupones`, `adminCorreos`, `adminBitacora`, `adminExportar`,
+`permisosPorRol`.
 
 **Mutaciones:** `login`, `registrar`, `logout`, `agregarAlCarrito`,
 `cambiarCantidadCarrito`, `quitarDelCarrito`, `vaciarCarritoDB`, `fusionarCarrito`,
 `crearPedido(data, pago)`, `sincronizarPago`, `cancelarPedido`,
-`simularTransferenciaSpei` (solo modo de prueba), y para admin
-`crearProducto` / `actualizarProducto` / `eliminarProducto`, `actualizarEstadoPedido`,
-`reembolsarPedido`, `crearLinkDePagoAdmin`, `cambiarRolUsuario`.
+`simularTransferenciaSpei` (solo modo de prueba), `guardarDireccion`,
+`eliminarDireccion`, `solicitarRestablecimiento`, `restablecerPassword`,
+`actualizarMiPerfil`, `cambiarMiPassword`, `ticketTiempoReal`, y para el panel
+`crearProducto` / `actualizarProducto` / `cambiarActivoProducto` /
+`eliminarProducto`, `crearCategoria` / `actualizarCategoria` / `eliminarCategoria`,
+`subirImagen`, `registrarEntrada`, `ajustarStock`, `crearProveedor` /
+`actualizarProveedor`, `crearCupon` / `actualizarCupon`, `actualizarEstadoPedido`,
+`actualizarGuiaPedido`, `agregarNotaPedido`, `reembolsarPedido` (total o parcial),
+`crearLinkDePagoAdmin`, `cambiarRolUsuario`, `bloquearUsuario`,
+`enviarRestablecimientoCliente`, `reenviarCorreo`, `actualizarConfiguracion`.
 
-Además de GraphQL, el backend recibe los avisos de Stripe en `POST /webhooks/stripe`.
+**Subscriptions** (WebSocket en `ws://localhost:4000/graphql`, protocolo
+`graphql-ws`): `pedidoActualizado(id)`, `stockActualizado(productoId)` y
+`eventosAdmin`. Para conectarse con sesión se pide primero `ticketTiempoReal`
+(un ticket de un solo uso que vence en 60 s) y se manda como
+`connectionParams.ticket`.
+
+Además de GraphQL, el backend recibe los avisos de Stripe en `POST /webhooks/stripe`
+y sirve las imágenes subidas en `GET /imagenes/:id`.
 
 Más detalle del backend en [back/README.md](back/README.md).
