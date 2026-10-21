@@ -11,12 +11,17 @@
 // llaman a aplicarEstado(), que es el ÚNICO lugar donde cambia un estado.
 import { randomUUID } from "node:crypto";
 import { one, transaccion } from "../../lib/sql.js";
+import { publicarPedido, publicarEventoAdmin } from "../../lib/pubsub.js";
 import {
+  aCentavos,
   crearPedidoPendiente,
   devolverStock,
   volverAApartarStock,
   vaciarCarrito,
+  registrarHistorial,
+  guardarEnLibreta,
 } from "../pedidos/servicio.js";
+import { notificarPedido } from "../notificaciones/servicio.js";
 import { stripe, requireStripe, WEB_URL, modoPrueba } from "./stripe.js";
 
 export const METODOS = ["credito", "debito", "oxxo", "spei", "link"];
@@ -30,6 +35,8 @@ const SEGUNDOS_LINK = 24 * 60 * 60 - 5 * 60; // el link dura 24 h (menos 5 min d
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 const segundosAIso = (segundos) => (segundos ? new Date(segundos * 1000).toISOString() : null);
+const pesos = (centavos) =>
+  (centavos / 100).toLocaleString("es-MX", { style: "currency", currency: "MXN" });
 const esperar = (ms) => new Promise((resolver) => setTimeout(resolver, ms));
 
 const descripcion = (pedidoId) => `VinyLink · pedido #${pedidoId}`;
@@ -206,7 +213,8 @@ async function cancelarIntentSinError(paymentIntentId) {
 // idempotente: aplicar dos veces la misma lectura no hace nada nuevo, así
 // que da igual si el aviso llega por webhook, por sondeo o por las dos vías.
 //   lectura = { estadoPago, detalle, error, paymentIntentId, checkoutSessionId }
-export async function aplicarEstado(pedidoId, lectura, { reponerStock = false } = {}) {
+// `usuarioId` = quién lo provocó (para el historial); null = Stripe/sistema.
+export async function aplicarEstado(pedidoId, lectura, { reponerStock = false, usuarioId = null } = {}) {
   const resultado = await transaccion(async (client) => {
     // FOR UPDATE: si llegan dos avisos al mismo tiempo, el segundo espera al primero.
     const { rows: pedidos } = await client.query("SELECT * FROM pedido WHERE id = $1 FOR UPDATE", [
@@ -261,17 +269,29 @@ export async function aplicarEstado(pedidoId, lectura, { reponerStock = false } 
       }
     } else if (cambio && (nuevo === "fallido" || nuevo === "cancelado") && pedido.estado === "pendiente") {
       estado = "cancelado";
-      await devolverStock(client, pedidoId);
+      await devolverStock(client, pedidoId, "cancelacion", usuarioId);
     } else if (cambio && nuevo === "reembolsado") {
       estado = "reembolsado";
-      if (reponerStock) await devolverStock(client, pedidoId);
+      if (reponerStock) await devolverStock(client, pedidoId, "reembolso", usuarioId);
     }
 
     if (estado !== pedido.estado || nota !== pedido.nota) {
       await client.query(
-        "UPDATE pedido SET estado = $2, pagado_en = $3, nota = $4 WHERE id = $1",
+        `UPDATE pedido SET estado = $2, pagado_en = $3, nota = $4,
+                -- Un reembolso total deja todo el monto como reembolsado.
+                monto_reembolsado = CASE WHEN $2 = 'reembolsado' THEN total ELSE monto_reembolsado END
+          WHERE id = $1`,
         [pedidoId, estado, pagadoEn, nota]
       );
+    }
+
+    if (estado !== pedido.estado) {
+      const comentario =
+        estado === "cancelado" ? error : estado === "pagado" && pedido.estado === "cancelado" ? nota : null;
+      await registrarHistorial(client, pedidoId, pedido.estado, estado, usuarioId, comentario);
+      // Avisos (tiempo real y correo) solo si la transacción se confirma.
+      const yaReembolsado = aCentavos(pedido.monto_reembolsado ?? 0);
+      client.alConfirmar(() => avisarCambio(pedido, pago, estado, { error, yaReembolsado }));
     }
     return {
       pedido: { ...pedido, estado },
@@ -295,6 +315,25 @@ export async function aplicarEstado(pedidoId, lectura, { reponerStock = false } 
     }
   }
   return resultado;
+}
+
+// Avisos de un cambio de estado: al panel y a la página del pedido (tiempo
+// real) y al cliente (correo). Un pago rechazado con tarjeta no manda correo
+// de "cancelado": el cliente ya vio el error en el checkout.
+async function avisarCambio(pedido, pago, estado, { error, yaReembolsado }) {
+  await publicarPedido(pedido.id);
+  const n = `#${pedido.id}`;
+  if (estado === "pagado") {
+    await publicarEventoAdmin({ tipo: "pago_recibido", mensaje: `Se pagó el pedido ${n} (${pesos(aCentavos(pedido.total))})`, pedidoId: pedido.id });
+    void notificarPedido(pedido.id, "pagado");
+  } else if (estado === "cancelado") {
+    await publicarEventoAdmin({ tipo: "pedido_cancelado", mensaje: `Se canceló el pedido ${n}${error ? `: ${error}` : ""}`, pedidoId: pedido.id });
+    if (!METODOS_TARJETA.includes(pago.metodo)) void notificarPedido(pedido.id, "cancelado", { motivo: error });
+  } else if (estado === "reembolsado") {
+    const monto = (aCentavos(pedido.total) - yaReembolsado) / 100;
+    await publicarEventoAdmin({ tipo: "reembolso", mensaje: `Se reembolsó el pedido ${n}`, pedidoId: pedido.id });
+    void notificarPedido(pedido.id, "reembolsado", { monto });
+  }
 }
 
 // Le pregunta a Stripe cómo va el cobro de un pedido y lo aplica. Lo usan el
@@ -377,7 +416,7 @@ function validarTipoDeTarjeta(metodo, funding) {
   }
 }
 
-async function pagarConTarjeta({ usuario, items, metodo, confirmationTokenId }) {
+async function pagarConTarjeta({ usuario, items, metodo, confirmationTokenId, extras }) {
   const s = requireStripe();
   if (!confirmationTokenId) throw new Error("Faltan los datos de la tarjeta");
 
@@ -407,6 +446,7 @@ async function pagarConTarjeta({ usuario, items, metodo, confirmationTokenId }) 
     items,
     metodo,
     validarTotal: validadorDeTotal(metodo),
+    ...extras,
   });
 
   // 3) Cobrar. confirm: true = crear y cobrar en la misma llamada.
@@ -448,7 +488,7 @@ async function pagarConTarjeta({ usuario, items, metodo, confirmationTokenId }) 
   };
 }
 
-async function pagarConOxxo({ usuario, items, nombre, email }) {
+async function pagarConOxxo({ usuario, items, nombre, email, extras }) {
   const s = requireStripe();
   nombre = String(nombre ?? "").trim().replace(/\s+/g, " ");
   email = String(email ?? "").trim().toLowerCase();
@@ -463,6 +503,7 @@ async function pagarConOxxo({ usuario, items, nombre, email }) {
     items,
     metodo: "oxxo",
     validarTotal: validadorDeTotal("oxxo"),
+    ...extras,
   });
 
   let intent;
@@ -515,7 +556,7 @@ async function customerDeStripe(usuario) {
   return customer.id;
 }
 
-async function pagarConSpei({ usuario, items }) {
+async function pagarConSpei({ usuario, items, extras }) {
   const s = requireStripe();
   const customer = await customerDeStripe(usuario);
 
@@ -524,6 +565,7 @@ async function pagarConSpei({ usuario, items }) {
     items,
     metodo: "spei",
     validarTotal: validadorDeTotal("spei"),
+    ...extras,
   });
 
   let intent;
@@ -558,15 +600,39 @@ async function pagarConSpei({ usuario, items }) {
 
 const imagenValida = (url) => /^https:\/\/\S+$/.test(url ?? "") && url.length <= 2048;
 
+// Renglones que se muestran en la página de Stripe. Stripe Checkout no
+// acepta renglones negativos: si hay descuento, se cobra un solo renglón con
+// el total del pedido; si no, un renglón por producto (más el envío).
+function renglonesDelLink(pedidoId, renglones, totales) {
+  const renglon = (nombre, centavos, cantidad = 1, imagen = null) => ({
+    quantity: cantidad,
+    price_data: {
+      currency: "mxn",
+      unit_amount: centavos,
+      product_data: { name: nombre, ...(imagenValida(imagen) ? { images: [imagen] } : {}) },
+    },
+  });
+  if (totales.descuentoCentavos > 0) {
+    const piezas = renglones.reduce((a, r) => a + r.cantidad, 0);
+    return [renglon(`Pedido #${pedidoId} (${piezas} ${piezas === 1 ? "pieza" : "piezas"}, con descuento)`, totales.totalCentavos)];
+  }
+  const lista = renglones.map(({ producto, cantidad, centavos }) =>
+    renglon(producto.nombre, centavos, cantidad, producto.imagen)
+  );
+  if (totales.envioCentavos > 0) lista.push(renglon("Envío", totales.envioCentavos));
+  return lista;
+}
+
 // Link de pago = Checkout Session de Stripe: una página segura con su propia
 // URL que cualquiera puede abrir para pagar (con tarjeta u OXXO).
-export async function crearLinkDePago({ usuario, items }) {
+export async function crearLinkDePago({ usuario, items, extras = {} }) {
   const s = requireStripe();
-  const { pedido, renglones, totalCentavos } = await crearPedidoPendiente({
+  const { pedido, renglones, totalCentavos, totales } = await crearPedidoPendiente({
     usuarioId: usuario.id,
     items,
     metodo: "link",
     validarTotal: validadorDeTotal("link"),
+    ...extras,
   });
   const metodos = totalCentavos <= MAXIMO_OXXO_CENTAVOS ? ["card", "oxxo"] : ["card"];
 
@@ -576,17 +642,7 @@ export async function crearLinkDePago({ usuario, items }) {
       {
         mode: "payment",
         locale: "es-419",
-        line_items: renglones.map(({ producto, cantidad, centavos }) => ({
-          quantity: cantidad,
-          price_data: {
-            currency: "mxn",
-            unit_amount: centavos,
-            product_data: {
-              name: producto.nombre,
-              ...(imagenValida(producto.imagen) ? { images: [producto.imagen] } : {}),
-            },
-          },
-        })),
+        line_items: renglonesDelLink(pedido.id, renglones, totales),
         payment_method_types: metodos,
         payment_method_options: {
           card: { installments: { enabled: true } },
@@ -613,23 +669,37 @@ export async function crearLinkDePago({ usuario, items }) {
 }
 
 // Punto de entrada de la mutación crearPedido: elige el método.
-export async function cobrar({ usuario, items, pago }) {
+export async function cobrar({ usuario, items, pago, cupon = null, envio = null, guardarDireccion = false }) {
   requireStripe();
   const metodo = pago?.metodo;
   if (!METODOS.includes(metodo)) throw new Error("Elige un método de pago válido");
+  const extras = { cupon, envio };
+  let resultado;
   if (METODOS_TARJETA.includes(metodo)) {
-    return pagarConTarjeta({
+    resultado = await pagarConTarjeta({
       usuario,
       items,
       metodo,
       confirmationTokenId: pago.confirmationTokenId,
+      extras,
     });
+  } else if (metodo === "oxxo") {
+    resultado = await pagarConOxxo({ usuario, items, nombre: pago.nombre, email: pago.email, extras });
+  } else if (metodo === "spei") {
+    resultado = await pagarConSpei({ usuario, items, extras });
+  } else {
+    // El cliente comparte el link, así que su carrito ya se puede vaciar.
+    resultado = await crearLinkDePago({ usuario, items, extras });
+    await vaciarCarrito(usuario.id);
   }
-  if (metodo === "oxxo") return pagarConOxxo({ usuario, items, nombre: pago.nombre, email: pago.email });
-  if (metodo === "spei") return pagarConSpei({ usuario, items });
-  // El cliente comparte el link, así que su carrito ya se puede vaciar.
-  const resultado = await crearLinkDePago({ usuario, items });
-  await vaciarCarrito(usuario.id);
+  // OXXO, SPEI y link quedan esperando el pago: se manda el correo con el
+  // enlace a las instrucciones. (Con tarjeta llega directo el de "pagado".)
+  if (!METODOS_TARJETA.includes(metodo)) void notificarPedido(resultado.pedidoId, "creado");
+  if (envio && guardarDireccion) {
+    await guardarEnLibreta(usuario.id, envio).catch((err) =>
+      console.error("No se pudo guardar la dirección en la libreta:", err.message)
+    );
+  }
   return resultado;
 }
 
@@ -639,7 +709,7 @@ export async function cobrar({ usuario, items, pago }) {
 
 // Cancela un pedido que sigue esperando su pago. Primero se cancela en Stripe
 // (para que ya no se pueda pagar) y después se devuelve el stock.
-export async function cancelarPedidoPendiente(pedidoId, motivo) {
+export async function cancelarPedidoPendiente(pedidoId, motivo, usuarioId = null) {
   const pedido = await one("SELECT * FROM pedido WHERE id = $1", [pedidoId]);
   if (!pedido) throw new Error(`No existe el pedido #${pedidoId}`);
   if (pedido.estado !== "pendiente") {
@@ -653,7 +723,9 @@ export async function cancelarPedidoPendiente(pedidoId, motivo) {
         pedidoId,
         motivo,
       ]);
-      await devolverStock(client, pedidoId);
+      await devolverStock(client, pedidoId, "cancelacion", usuarioId);
+      await registrarHistorial(client, pedidoId, "pendiente", "cancelado", usuarioId, motivo);
+      client.alConfirmar(() => publicarPedido(pedidoId));
     });
     return null;
   }
@@ -679,10 +751,15 @@ export async function cancelarPedidoPendiente(pedidoId, motivo) {
       throw new Error(`Stripe no permitió cancelar el pago: ${mensajeDeError(err)}`);
     }
   }
-  return aplicarEstado(pedidoId, { estadoPago: "cancelado", detalle: {}, error: motivo });
+  return aplicarEstado(pedidoId, { estadoPago: "cancelado", detalle: {}, error: motivo }, { usuarioId });
 }
 
-export async function reembolsarPedido(pedidoId, { reponerStock = true } = {}) {
+// Reembolsa un pedido pagado con tarjeta. Sin `monto` (o con todo lo que
+// falta por devolver) es un reembolso TOTAL: el pedido pasa a "reembolsado"
+// y, si se pide, el stock regresa. Con un monto menor es PARCIAL: el pedido
+// conserva su estado y solo aumenta `monto_reembolsado` (por ejemplo, una
+// pieza que llegó dañada).
+export async function reembolsarPedido(pedidoId, { reponerStock = true, monto = null, motivo = null, usuarioId = null } = {}) {
   const s = requireStripe();
   const pedido = await one("SELECT * FROM pedido WHERE id = $1", [pedidoId]);
   const pago = await one("SELECT * FROM pago WHERE pedido_id = $1", [pedidoId]);
@@ -693,6 +770,17 @@ export async function reembolsarPedido(pedidoId, { reponerStock = true } = {}) {
   if (!pago?.stripe_payment_intent_id || pago.estado !== "pagado") {
     throw new Error("Este pedido no se cobró con Stripe; no hay un pago en línea que reembolsar");
   }
+
+  const restante = aCentavos(pedido.total) - aCentavos(pedido.monto_reembolsado ?? 0);
+  const montoCentavos = monto == null ? restante : aCentavos(monto);
+  if (!Number.isInteger(montoCentavos) || montoCentavos <= 0) {
+    throw new Error("El monto a reembolsar debe ser mayor a $0");
+  }
+  if (montoCentavos > restante) {
+    throw new Error(`Solo quedan ${pesos(restante)} por reembolsar en este pedido`);
+  }
+  const parcial = montoCentavos < restante;
+  motivo = motivo?.trim() || null;
 
   const pi = await s.paymentIntents.retrieve(pago.stripe_payment_intent_id, {
     expand: ["latest_charge"],
@@ -709,20 +797,50 @@ export async function reembolsarPedido(pedidoId, { reponerStock = true } = {}) {
   let reembolso;
   try {
     reembolso = await s.refunds.create(
-      { payment_intent: pi.id, reason: "requested_by_customer", metadata: { pedido_id: String(pedidoId) } },
+      {
+        payment_intent: pi.id,
+        amount: montoCentavos,
+        reason: "requested_by_customer",
+        metadata: { pedido_id: String(pedidoId), ...(motivo ? { motivo: motivo.slice(0, 200) } : {}) },
+      },
       { idempotencyKey: llaveIdempotencia(pedidoId, "reembolso") }
     );
   } catch (err) {
     throw new Error(`Stripe no pudo hacer el reembolso: ${mensajeDeError(err)}`);
   }
-  await one("UPDATE pago SET stripe_reembolso_id = $2 WHERE id = $1 RETURNING id", [
-    pago.id,
-    reembolso.id,
-  ]);
+
+  await transaccion(async (client) => {
+    await client.query(
+      `INSERT INTO reembolso (pedido_id, monto_centavos, parcial, repuso_stock, motivo, stripe_reembolso_id, usuario_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+      [pedidoId, montoCentavos, parcial, !parcial && reponerStock, motivo, reembolso.id, usuarioId]
+    );
+    await client.query("UPDATE pago SET stripe_reembolso_id = $2 WHERE id = $1", [pago.id, reembolso.id]);
+    if (parcial) {
+      await client.query("UPDATE pedido SET monto_reembolsado = monto_reembolsado + $2 WHERE id = $1", [
+        pedidoId,
+        montoCentavos / 100,
+      ]);
+      await registrarHistorial(
+        client,
+        pedidoId,
+        pedido.estado,
+        pedido.estado,
+        usuarioId,
+        `Reembolso parcial de ${pesos(montoCentavos)}${motivo ? `: ${motivo}` : ""}`
+      );
+      client.alConfirmar(async () => {
+        await publicarPedido(pedidoId);
+        void notificarPedido(pedidoId, "reembolso_parcial", { monto: montoCentavos / 100, motivo });
+      });
+    }
+  });
+
+  if (parcial) return { parcial: true };
   return aplicarEstado(
     pedidoId,
     { estadoPago: "reembolsado", detalle: {}, error: null },
-    { reponerStock }
+    { reponerStock, usuarioId }
   );
 }
 
