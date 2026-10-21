@@ -3,6 +3,11 @@
 // un producto. Formulario HTML con POST: funciona sin JavaScript. Si el
 // backend rechaza los datos, se vuelve a mostrar el formulario con lo que
 // escribió el admin y el mensaje de error.
+//
+// La imagen puede ser una URL o un archivo: con JavaScript, el archivo se
+// sube al momento (mutación subirImagen) y su URL se pone en el campo.
+// El stock se captura solo al crear; después cambia desde Inventario
+// (entradas y ajustes), para que cada cambio quede en el kárdex.
 import Layout from "../../../layouts/Layout.astro";
 import AdminNav from "../../../components/admin/AdminNav.astro";
 import { graphqlServer } from "../../../lib/graphql";
@@ -12,6 +17,8 @@ import {
   MUTATION_CREAR_PRODUCTO,
   MUTATION_ACTUALIZAR_PRODUCTO,
 } from "../../../lib/queries/admin.js";
+import { fechaHora, TIPOS_MOVIMIENTO } from "../../../lib/formato.js";
+import { puede } from "../../../lib/permisos.js";
 
 const { id } = Astro.params;
 const esNuevo = id === "nuevo";
@@ -23,10 +30,24 @@ type Datos = {
   stock: string;
   imagen: string;
   categoriaId: string;
+  sku: string;
+  stockMinimo: string;
+  activo: boolean;
 };
 
-let datos: Datos = { nombre: "", descripcion: "", precio: "", stock: "0", imagen: "", categoriaId: "" };
+let datos: Datos = {
+  nombre: "",
+  descripcion: "",
+  precio: "",
+  stock: "0",
+  imagen: "",
+  categoriaId: "",
+  sku: "",
+  stockMinimo: "5",
+  activo: true,
+};
 let categorias: { id: string; nombre: string }[] = [];
+let movimientos: any[] = [];
 let error: string | null = null;
 
 // 1) Cargar categorías y, si se edita, el producto.
@@ -37,7 +58,14 @@ try {
     const r = await graphqlServer(Astro.cookies, QUERY_ADMIN_PRODUCTO, { id });
     if (!r.producto) return Astro.rewrite("/404");
     categorias = r.categorias;
-    datos = { ...r.producto, precio: String(r.producto.precio), stock: String(r.producto.stock) };
+    movimientos = r.producto.movimientos;
+    datos = {
+      ...r.producto,
+      precio: String(r.producto.precio),
+      stock: String(r.producto.stock),
+      sku: r.producto.sku ?? "",
+      stockMinimo: String(r.producto.stockMinimo),
+    };
   }
 } catch (err) {
   error = err instanceof Error ? err.message : String(err);
@@ -47,21 +75,32 @@ try {
 if (Astro.request.method === "POST") {
   const form = await Astro.request.formData();
   datos = {
+    ...datos,
     nombre: String(form.get("nombre") ?? ""),
     descripcion: String(form.get("descripcion") ?? ""),
     precio: String(form.get("precio") ?? ""),
-    stock: String(form.get("stock") ?? ""),
+    stock: esNuevo ? String(form.get("stock") ?? "") : datos.stock,
     imagen: String(form.get("imagen") ?? ""),
     categoriaId: String(form.get("categoriaId") ?? ""),
+    sku: String(form.get("sku") ?? ""),
+    stockMinimo: String(form.get("stockMinimo") ?? "5"),
+    activo: form.get("activo") === "on",
   };
-  // GraphQL espera números: precio Float y stock Int.
+  // GraphQL espera números: precio Float y los stocks Int.
   const data = {
-    ...datos,
+    nombre: datos.nombre,
+    descripcion: datos.descripcion,
     precio: Number(datos.precio),
-    stock: Number.parseInt(datos.stock, 10),
+    imagen: datos.imagen,
+    categoriaId: datos.categoriaId,
+    sku: datos.sku || null,
+    stockMinimo: Number.parseInt(datos.stockMinimo, 10),
+    activo: datos.activo,
+    // Al editar no se manda: el stock se mueve desde Inventario.
+    ...(esNuevo ? { stock: Number.parseInt(datos.stock, 10) } : {}),
   };
   try {
-    if (Number.isNaN(data.precio) || Number.isNaN(data.stock)) {
+    if (Number.isNaN(data.precio) || Number.isNaN(data.stockMinimo) || (esNuevo && Number.isNaN(data.stock))) {
       throw new Error("Precio y stock deben ser números");
     }
     if (esNuevo) {
@@ -74,6 +113,7 @@ if (Astro.request.method === "POST") {
     error = err instanceof Error ? err.message : String(err);
   }
 }
+const verInventario = puede(Astro.locals.user, "inventario");
 ---
 
 <Layout title={esNuevo ? "Nuevo producto · Admin" : `Editar ${datos.nombre} · Admin`}>
@@ -95,12 +135,32 @@ if (Astro.request.method === "POST") {
         </label>
         <div class="formulario-admin__par">
           <label>
-            Precio (MXN)
+            Precio (MXN, IVA incluido)
             <input type="number" name="precio" required min="0.01" step="0.01" value={datos.precio} />
           </label>
           <label>
-            Stock (piezas)
-            <input type="number" name="stock" required min="0" step="1" value={datos.stock} />
+            SKU (opcional)
+            <input type="text" name="sku" maxlength="40" pattern="[A-Za-z0-9._\-]{2,40}" value={datos.sku} placeholder="DIS-ABBEY-180" />
+          </label>
+        </div>
+        <div class="formulario-admin__par">
+          {
+            esNuevo ? (
+              <label>
+                Stock inicial (piezas)
+                <input type="number" name="stock" required min="0" step="1" value={datos.stock} />
+              </label>
+            ) : (
+              <div class="campo-solo-lectura">
+                <span>Stock actual</span>
+                <strong>{datos.stock} piezas</strong>
+                {verInventario && <a href={`/admin/inventario?producto=${id}`}>Registrar entrada o ajuste →</a>}
+              </div>
+            )
+          }
+          <label>
+            Stock mínimo (alerta)
+            <input type="number" name="stockMinimo" required min="0" step="1" value={datos.stockMinimo} />
           </label>
         </div>
         <label>
@@ -127,6 +187,15 @@ if (Astro.request.method === "POST") {
             id="campo-imagen"
           />
         </label>
+        <label class="subir-imagen">
+          …o sube un archivo (JPG, PNG, WebP o GIF, máx. 5 MB)
+          <input type="file" accept="image/jpeg,image/png,image/webp,image/gif" id="archivo-imagen" />
+        </label>
+        <p class="muted" id="estado-subida" role="status"></p>
+        <label class="casilla">
+          <input type="checkbox" name="activo" checked={datos.activo} />
+          A la venta (si lo desmarcas, no aparece en la tienda pero conserva su historial)
+        </label>
 
         {
           error && (
@@ -146,14 +215,80 @@ if (Astro.request.method === "POST") {
         <figcaption class="muted">Vista previa</figcaption>
       </figure>
     </div>
+
+    {
+      !esNuevo && movimientos.length > 0 && (
+        <div class="panel-card">
+          <div class="panel-card__cabecera">
+            <h3>Últimos movimientos de inventario</h3>
+            {verInventario && (
+              <a class="btn btn--link" href={`/admin/inventario?producto=${id}`}>
+                Ver el kárdex completo
+              </a>
+            )}
+          </div>
+          <ul class="lista-simple">
+            {movimientos.map((m) => (
+              <li>
+                <span class={`mov mov--${m.cantidad >= 0 ? "entra" : "sale"}`}>
+                  {m.cantidad > 0 ? `+${m.cantidad}` : m.cantidad}
+                </span>{" "}
+                {TIPOS_MOVIMIENTO[m.tipo as keyof typeof TIPOS_MOVIMIENTO] ?? m.tipo} · quedan {m.stockResultante}
+                <span class="muted tabla__sub">
+                  {fechaHora(m.creadoEn)} · {m.usuario?.nombre ?? "Sistema"}
+                  {m.motivo && ` · ${m.motivo}`}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )
+    }
   </section>
 </Layout>
 
 <script>
-  // Actualiza la vista previa mientras se escribe la URL de la imagen.
+  import { graphqlClient } from "../../../lib/graphql";
+  import { MUTATION_SUBIR_IMAGEN } from "../../../lib/queries/admin.js";
+
   const campo = document.getElementById("campo-imagen") as HTMLInputElement | null;
   const vista = document.getElementById("vista-imagen") as HTMLImageElement | null;
+  const archivo = document.getElementById("archivo-imagen") as HTMLInputElement | null;
+  const estado = document.getElementById("estado-subida");
+
+  // Actualiza la vista previa mientras se escribe la URL de la imagen.
   campo?.addEventListener("input", () => {
     if (vista && /^https?:\/\//.test(campo.value)) vista.src = campo.value;
+  });
+
+  // Lee el archivo como base64 (sin el prefijo "data:...;base64,").
+  const leerBase64 = (f: File) =>
+    new Promise<string>((resolver, rechazar) => {
+      const lector = new FileReader();
+      lector.onload = () => resolver(String(lector.result).split(",")[1] ?? "");
+      lector.onerror = () => rechazar(new Error("No se pudo leer el archivo"));
+      lector.readAsDataURL(f);
+    });
+
+  archivo?.addEventListener("change", async () => {
+    const f = archivo.files?.[0];
+    if (!f || !estado || !campo) return;
+    if (f.size > 5 * 1024 * 1024) {
+      estado.textContent = "La imagen pesa más de 5 MB.";
+      return;
+    }
+    estado.textContent = "Subiendo imagen…";
+    try {
+      const { subirImagen } = await graphqlClient(MUTATION_SUBIR_IMAGEN, {
+        nombre: f.name,
+        tipo: f.type,
+        base64: await leerBase64(f),
+      });
+      campo.value = subirImagen.url;
+      if (vista) vista.src = subirImagen.url;
+      estado.textContent = `✓ Imagen subida (${Math.round(subirImagen.bytes / 1024)} KB). Guarda el producto para usarla.`;
+    } catch (err) {
+      estado.textContent = err instanceof Error ? err.message : String(err);
+    }
   });
 </script>

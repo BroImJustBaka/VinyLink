@@ -5,10 +5,11 @@
 import { defineMiddleware } from "astro:middleware";
 import { SESSION_COOKIE, graphqlServer } from "./lib/graphql";
 import { QUERY_ME } from "./lib/queries/auth.js";
+import { esPersonal, puede, seccionDe, seccionesDe } from "./lib/permisos.js";
 
 // Rutas que exigen sesión (incluye subrutas: /checkout/algo).
 const PROTEGIDAS = ["/perfil", "/checkout", "/pedido", "/admin"];
-// Rutas que además exigen rol ADMIN.
+// Rutas del panel: solo el personal (cualquier rol con permisos).
 const SOLO_ADMIN = ["/admin"];
 
 const coincide = (pathname: string, rutas: string[]) =>
@@ -37,9 +38,21 @@ export const onRequest = defineMiddleware(async (context, next) => {
     return context.redirect(`/login?next=${encodeURIComponent(pathname + search)}`);
   }
   // Un cliente que abre /admin ve un 404: no se revela que el panel existe.
-  // (El backend igual rechaza cada operación con requireAdmin.)
-  if (coincide(pathname, SOLO_ADMIN) && context.locals.user?.rol !== "ADMIN") {
-    return context.rewrite("/404");
+  // (El backend igual rechaza cada operación con requirePermiso.)
+  if (coincide(pathname, SOLO_ADMIN)) {
+    const user = context.locals.user;
+    if (!esPersonal(user)) return context.rewrite("/404");
+    // Cada sección pide su permiso. Si el rol no lo tiene: en /admin se le
+    // manda a su primera sección (p. ej. Almacén → Productos); en otra ruta, 404.
+    // Las descargas CSV no son una sección: el backend revisa el permiso de cada reporte.
+    const seccion = pathname.startsWith("/admin/exportar/") ? null : seccionDe(pathname);
+    if (seccion && !puede(user, seccion.permiso)) {
+      const primera = seccionesDe(user)[0];
+      if (seccion.href === "/admin" && pathname.replace(/\/$/, "") === "/admin" && primera) {
+        return context.redirect(primera.href);
+      }
+      return context.rewrite("/404");
+    }
   }
 
   return next();

@@ -1,0 +1,140 @@
+---
+// Panel admin → Configuración de la tienda (solo ADMIN): nombre, email de
+// contacto, envío, IVA y paqueterías. Abajo, qué puede hacer cada rol (solo
+// lectura: los permisos viven en el código del backend, auth/permisos.js).
+import Layout from "../../layouts/Layout.astro";
+import AdminNav from "../../components/admin/AdminNav.astro";
+import { graphqlServer } from "../../lib/graphql";
+import { QUERY_CONFIGURACION, MUTATION_ACTUALIZAR_CONFIGURACION } from "../../lib/queries/admin.js";
+import { NOMBRES_ROL } from "../../lib/permisos.js";
+
+let error: string | null = null;
+
+if (Astro.request.method === "POST") {
+  const form = await Astro.request.formData();
+  const t = (c: string) => String(form.get(c) ?? "").trim();
+  try {
+    await graphqlServer(Astro.cookies, MUTATION_ACTUALIZAR_CONFIGURACION, {
+      data: {
+        nombreTienda: t("nombreTienda"),
+        emailContacto: t("emailContacto"),
+        costoEnvio: Number(t("costoEnvio")),
+        envioGratisDesde: Number(t("envioGratisDesde")),
+        ivaPorcentaje: Number(t("ivaPorcentaje")),
+        // Una paquetería por renglón.
+        paqueterias: t("paqueterias").split(/\r?\n/),
+      },
+    });
+    return Astro.redirect("/admin/configuracion?ok=1", 303);
+  } catch (err) {
+    error = err instanceof Error ? err.message : String(err);
+  }
+}
+
+let datos: any = null;
+try {
+  datos = await graphqlServer(Astro.cookies, QUERY_CONFIGURACION);
+} catch (err) {
+  error ??= err instanceof Error ? err.message : String(err);
+}
+const c = datos?.configuracionTienda;
+const roles = (datos?.permisosPorRol ?? []).filter((r: any) => r.rol !== "CLIENTE");
+---
+
+<Layout title="Configuración · Admin">
+  <Fragment slot="sidebar"><AdminNav /></Fragment>
+
+  <section class="admin">
+    <div class="admin__cabecera">
+      <div>
+        <h2>Configuración</h2>
+        <p class="muted">Cada cambio queda en la bitácora.</p>
+      </div>
+    </div>
+
+    {Astro.url.searchParams.get("ok") && <div class="confirmacion-box"><span>✓ Configuración guardada.</span></div>}
+    {
+      error && (
+        <div class="error-box" role="alert">
+          <p>{error}</p>
+        </div>
+      )
+    }
+
+    {
+      c && (
+        <div class="panel-card">
+          <form method="post" class="checkout-form formulario-admin formulario-admin--ancho">
+            <div class="formulario-admin__par">
+              <label>
+                Nombre de la tienda
+                <input type="text" name="nombreTienda" required maxlength="80" value={c.nombreTienda} />
+              </label>
+              <label>
+                Email de contacto (aparece en los correos)
+                <input type="email" name="emailContacto" required value={c.emailContacto} />
+              </label>
+            </div>
+            <div class="formulario-admin__par">
+              <label>
+                Costo de envío (MXN, 0 = siempre gratis)
+                <input type="number" name="costoEnvio" required min="0" step="0.01" value={c.costoEnvio} />
+              </label>
+              <label>
+                Envío gratis desde (MXN, 0 = nunca)
+                <input type="number" name="envioGratisDesde" required min="0" step="0.01" value={c.envioGratisDesde} />
+              </label>
+            </div>
+            <div class="formulario-admin__par">
+              <label>
+                IVA incluido en los precios (%)
+                <input type="number" name="ivaPorcentaje" required min="0" max="100" step="0.01" value={c.ivaPorcentaje} />
+              </label>
+              <label>
+                Paqueterías (una por renglón)
+                <textarea name="paqueterias" rows="4" required>{c.paqueterias.join("\n")}</textarea>
+              </label>
+            </div>
+            <button class="btn btn--primario" type="submit">Guardar configuración</button>
+          </form>
+        </div>
+      )
+    }
+
+    {
+      roles.length > 0 && (
+        <div class="panel-card">
+          <h3>Roles del personal</h3>
+          <p class="muted">El rol de cada persona se cambia en Clientes. Lo que puede hacer cada rol:</p>
+          <div class="tabla-scroll">
+            <table class="tabla tabla--permisos">
+              <thead>
+                <tr>
+                  <th scope="col">Permiso</th>
+                  {roles.map((r: any) => (
+                    <th scope="col" class="centro">
+                      {NOMBRES_ROL[r.rol as keyof typeof NOMBRES_ROL] ?? r.rol}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {datos.permisos.map((p: any) => (
+                  <tr>
+                    <td>
+                      {p.descripcion}
+                      <span class="muted tabla__sub">{p.clave}</span>
+                    </td>
+                    {roles.map((r: any) => (
+                      <td class="centro">{r.permisos.includes(p.clave) ? <span aria-label="Sí">✓</span> : <span class="muted" aria-label="No">—</span>}</td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )
+    }
+  </section>
+</Layout>

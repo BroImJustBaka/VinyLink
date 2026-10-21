@@ -1,13 +1,16 @@
 ---
 // Dueño: Persona B. Página de un pedido: estado del pago (ficha OXXO, CLABE,
-// link o tarjeta), sus productos y el total.
+// link o tarjeta), envío y guía, línea de tiempo, sus productos y el desglose.
 // Renderizada en el servidor: usa la sesión para pedir solo pedidos propios.
+// PedidoEnVivo recarga la página si la tienda cambia el pedido (por ejemplo,
+// lo marca como enviado) mientras el cliente la tiene abierta.
 import Layout from "../../layouts/Layout.astro";
 import PanelPago from "../../components/pagos/PanelPago.astro";
 import SeguimientoPago from "../../components/pagos/SeguimientoPago.jsx";
+import PedidoEnVivo from "../../components/pagos/PedidoEnVivo.jsx";
 import { graphqlServer } from "../../lib/graphql";
 import { ERROR_SIN_SESION, QUERY_PEDIDO } from "../../lib/queries/pedidos.js";
-import { dinero, fechaHora, ESTADOS_PEDIDO, METODOS_PAGO } from "../../lib/formato.js";
+import { dinero, fechaHora, telefono, ESTADOS_PEDIDO, METODOS_PAGO } from "../../lib/formato.js";
 
 const { id } = Astro.params;
 
@@ -29,6 +32,7 @@ if (!error && !pedido) return Astro.rewrite("/404");
 const pendiente = pedido?.estado === "pendiente";
 // Stripe no permite cancelar una ficha OXXO ya generada (vence sola).
 const puedeCancelar = pendiente && !(pedido.pago?.oxxo && pedido.pago.estado === "requiere_accion");
+const nombreEstado = (e: string) => ESTADOS_PEDIDO[e as keyof typeof ESTADOS_PEDIDO] ?? e;
 ---
 
 <Layout title={`Pedido #${id}`}>
@@ -53,6 +57,16 @@ const puedeCancelar = pendiente && !(pedido.pago?.oxxo && pedido.pago.estado ===
             ` · ${METODOS_PAGO[pedido.metodoPago as keyof typeof METODOS_PAGO] ?? pedido.metodoPago}`}
         </p>
 
+        <PedidoEnVivo
+          client:only="react"
+          pedidoId={pedido.id}
+          estado={pedido.estado}
+          numeroGuia={pedido.numeroGuia}
+          montoReembolsado={pedido.montoReembolsado}
+          eventos={pedido.historial.length}
+          recargarSolo
+        />
+
         <PanelPago pedido={pedido} />
         <SeguimientoPago
           client:load
@@ -75,9 +89,68 @@ const puedeCancelar = pendiente && !(pedido.pago?.oxxo && pedido.pago.estado ===
           ))}
         </ul>
 
+        <ul class="checkout__desglose pedido-view__desglose">
+          <li>
+            <span>Subtotal</span>
+            <span>{dinero(pedido.subtotal)}</span>
+          </li>
+          {pedido.descuento > 0 && (
+            <li class="checkout__ahorro">
+              <span>Cupón {pedido.cupon}</span>
+              <span>−{dinero(pedido.descuento)}</span>
+            </li>
+          )}
+          <li>
+            <span>Envío</span>
+            <span>{pedido.costoEnvio > 0 ? dinero(pedido.costoEnvio) : "Gratis"}</span>
+          </li>
+          {pedido.montoReembolsado > 0 && (
+            <li>
+              <span>Reembolsado</span>
+              <span>{dinero(pedido.montoReembolsado)}</span>
+            </li>
+          )}
+        </ul>
         <p class="cart-total">
           <strong>Total: {dinero(pedido.total)}</strong>
+          <span class="muted"> · incluye {dinero(pedido.iva)} de IVA</span>
         </p>
+
+        {(pedido.envio || pedido.historial.length > 0) && (
+          <div class="pedido-view__extra">
+            {pedido.envio && (
+              <div>
+                <h3>Envío</h3>
+                <address class="direccion">
+                  <strong>{pedido.envio.nombre}</strong> · {telefono(pedido.envio.telefono)}
+                  <br />
+                  {pedido.envio.calle}, {pedido.envio.colonia}
+                  <br />
+                  {pedido.envio.ciudad}, {pedido.envio.estado}, C.P. {pedido.envio.cp}
+                </address>
+                {pedido.numeroGuia && (
+                  <p>
+                    <strong>{pedido.paqueteria}</strong> · guía <span class="pago-datos__numero">{pedido.numeroGuia}</span>
+                  </p>
+                )}
+              </div>
+            )}
+            <div>
+              <h3>Seguimiento</h3>
+              <ol class="linea-tiempo">
+                {pedido.historial.map((h: any) => (
+                  <li class="linea-tiempo__item">
+                    <span class="muted linea-tiempo__fecha">{fechaHora(h.fecha)}</span>
+                    <p>
+                      <strong>{h.estadoAnterior ? nombreEstado(h.estadoNuevo) : "Pedido recibido"}</strong>
+                      {h.estadoAnterior && h.texto && <span class="muted"> · {h.texto}</span>}
+                    </p>
+                  </li>
+                ))}
+              </ol>
+            </div>
+          </div>
+        )}
 
         <div class="cart-acciones">
           <a class="btn btn--primario" href="/">

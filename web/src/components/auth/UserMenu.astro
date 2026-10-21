@@ -1,9 +1,10 @@
 ---
 // Dueño: Persona C. Hueco del TopBar: sesión del usuario.
+import { esPersonal } from "../../lib/permisos.js";
 const user = Astro.locals.user;
 ---
 
-{user?.rol === "ADMIN" && (
+{esPersonal(user) && (
   <a class="topbar__perfil topbar__admin" href="/admin">
     Panel admin
   </a>

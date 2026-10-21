@@ -53,3 +53,29 @@ export const MARCAS_TARJETA = {
 
 // Referencias largas (ficha OXXO, CLABE) en grupos de 4 para leerlas fácil.
 export const enGrupos = (texto) => String(texto ?? "").replace(/(.{4})(?=.)/g, "$1 ");
+
+// Kárdex del inventario (movimiento_inventario.tipo).
+export const TIPOS_MOVIMIENTO = {
+  inicial: "Alta",
+  entrada: "Entrada",
+  ajuste: "Ajuste",
+  venta: "Venta",
+  cancelacion: "Cancelación",
+  reembolso: "Reembolso",
+};
+
+export const TIPOS_CUPON = {
+  porcentaje: "Porcentaje",
+  monto: "Monto fijo",
+  envio_gratis: "Envío gratis",
+};
+
+export const ESTADOS_CORREO = {
+  pendiente: "Pendiente",
+  enviado: "Enviado",
+  simulado: "Simulado (sin SMTP)",
+  error: "Error",
+};
+
+// "33 1234 5678" para mostrar un teléfono de 10 dígitos.
+export const telefono = (t) => (/^\d{10}$/.test(t ?? "") ? t.replace(/(\d{2})(\d{4})(\d{4})/, "$1 $2 $3") : t ?? "—");

@@ -1,0 +1,158 @@
+---
+// Panel admin → Correos: la bandeja de salida de la tienda (confirmaciones,
+// envíos, reembolsos, links de contraseña). ?ver=5 muestra el correo tal
+// como lo recibe el cliente, dentro de un iframe aislado (sandbox, sin
+// scripts). Un correo con error se puede reenviar.
+import Layout from "../../layouts/Layout.astro";
+import AdminNav from "../../components/admin/AdminNav.astro";
+import { graphqlServer } from "../../lib/graphql";
+import { QUERY_CORREOS, MUTATION_REENVIAR_CORREO } from "../../lib/queries/admin.js";
+import { fechaHora, ESTADOS_CORREO } from "../../lib/formato.js";
+
+const POR_PAGINA = 30;
+const params = Astro.url.searchParams;
+const buscar = (params.get("buscar") ?? "").trim() || null;
+const ver = params.get("ver");
+const pagina = Math.max(1, Number.parseInt(params.get("pagina") ?? "1", 10) || 1);
+let error: string | null = null;
+
+if (Astro.request.method === "POST") {
+  const form = await Astro.request.formData();
+  const id = String(form.get("id"));
+  try {
+    await graphqlServer(Astro.cookies, MUTATION_REENVIAR_CORREO, { id });
+    return Astro.redirect(`/admin/correos?ver=${id}&ok=1`, 303);
+  } catch (err) {
+    error = err instanceof Error ? err.message : String(err);
+  }
+}
+
+let datos: any = null;
+try {
+  datos = await graphqlServer(Astro.cookies, QUERY_CORREOS, {
+    buscar,
+    limite: POR_PAGINA,
+    offset: (pagina - 1) * POR_PAGINA,
+    ver: ver ?? "0",
+    conVista: Boolean(ver && /^\d+$/.test(ver)),
+  });
+} catch (err) {
+  error ??= err instanceof Error ? err.message : String(err);
+}
+const correos = datos?.adminCorreos ?? { items: [], total: 0, envioReal: false };
+const vista = datos?.adminCorreo ?? null;
+const paginas = Math.max(1, Math.ceil(correos.total / POR_PAGINA));
+const enlace = (cambios: Record<string, string | null>) => {
+  const p = new URLSearchParams(params);
+  p.delete("ok");
+  for (const [k, v] of Object.entries(cambios)) v ? p.set(k, v) : p.delete(k);
+  return `/admin/correos?${p}`;
+};
+---
+
+<Layout title="Correos · Admin">
+  <Fragment slot="sidebar"><AdminNav /></Fragment>
+
+  <section class="admin">
+    <div class="admin__cabecera">
+      <div>
+        <h2>Correos</h2>
+        <p class="muted">{correos.total} correos enviados por la tienda.</p>
+      </div>
+    </div>
+
+    {params.get("ok") && <div class="confirmacion-box"><span>✓ Correo reenviado.</span></div>}
+    {
+      error && (
+        <div class="error-box" role="alert">
+          <p>{error}</p>
+        </div>
+      )
+    }
+    {
+      !correos.envioReal && (
+        <div class="aviso-info">
+          <p>
+            <strong>Modo simulado:</strong> no hay servidor de correo (SMTP_HOST en back/.env), así que los correos no
+            salen a internet; se guardan aquí para revisarlos.
+          </p>
+        </div>
+      )
+    }
+
+    <form class="filtros" method="get" action="/admin/correos">
+      <label class="filtros__buscar">
+        Buscar
+        <input type="search" name="buscar" value={buscar ?? ""} placeholder="Email o asunto" />
+      </label>
+      <button class="btn btn--primario" type="submit">Buscar</button>
+    </form>
+
+    <div class:list={["admin__fila", { "admin__fila--asimetrica": vista }]}>
+      <div class="panel-card">
+        <div class="tabla-scroll">
+          <table class="tabla">
+            <thead>
+              <tr>
+                <th scope="col">Fecha</th>
+                <th scope="col">Para</th>
+                <th scope="col">Asunto</th>
+                <th scope="col">Estado</th>
+              </tr>
+            </thead>
+            <tbody>
+              {correos.items.map((c: any) => (
+                <tr class:list={{ "fila--elegida": c.id === ver }}>
+                  <td class="fecha">{fechaHora(c.creadoEn)}</td>
+                  <td>{c.para}</td>
+                  <td>
+                    <a href={enlace({ ver: c.id })}>{c.asunto}</a>
+                    {c.pedidoId && <span class="muted tabla__sub">Pedido #{c.pedidoId}</span>}
+                  </td>
+                  <td>
+                    <span class:list={["etiqueta", { "etiqueta--ok": c.estado === "enviado", "etiqueta--peligro": c.estado === "error" }]}>
+                      {ESTADOS_CORREO[c.estado as keyof typeof ESTADOS_CORREO] ?? c.estado}
+                    </span>
+                    {c.error && <span class="muted tabla__sub">{c.error}</span>}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        {
+          paginas > 1 && (
+            <nav class="paginacion" aria-label="Páginas">
+              {pagina > 1 ? <a class="btn" href={enlace({ pagina: String(pagina - 1) })}>← Anterior</a> : <span />}
+              <span class="muted">
+                Página {pagina} de {paginas}
+              </span>
+              {pagina < paginas ? <a class="btn" href={enlace({ pagina: String(pagina + 1) })}>Siguiente →</a> : <span />}
+            </nav>
+          )
+        }
+      </div>
+
+      {
+        vista && (
+          <div class="panel-card">
+            <div class="panel-card__cabecera">
+              <h3>{vista.asunto}</h3>
+              <a class="btn btn--link" href={enlace({ ver: null })}>
+                Cerrar
+              </a>
+            </div>
+            <p class="muted">
+              Para {vista.para} · {fechaHora(vista.creadoEn)}
+            </p>
+            <iframe class="vista-correo" srcdoc={vista.html} sandbox="" title={`Vista previa: ${vista.asunto}`}></iframe>
+            <form method="post">
+              <input type="hidden" name="id" value={vista.id} />
+              <button class="btn" type="submit">Reenviar</button>
+            </form>
+          </div>
+        )
+      }
+    </div>
+  </section>
+</Layout>

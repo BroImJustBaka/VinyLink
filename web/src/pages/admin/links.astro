@@ -40,7 +40,7 @@ try {
   error ??= err instanceof Error ? err.message : String(err);
 }
 
-const clientes = (datos?.adminClientes ?? []).map((c: any) => c.usuario);
+const clientes = (datos?.adminClientes.items ?? []).map((c: any) => c.usuario).filter((u: any) => u.activo);
 const productos = (datos?.productos.items ?? []).filter((p: any) => p.stock > 0);
 const recientes = datos?.adminPedidos.items ?? [];
 const nuevoId = Astro.url.searchParams.get("nuevo");

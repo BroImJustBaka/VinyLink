@@ -2,11 +2,20 @@
 // Dueño: Persona C. Migración de front/src/views/PerfilView.jsx.
 // El middleware ya redirige a /login si no hay sesión, así que aquí
 // Astro.locals.user existe. No necesita ser una isla React ni usar stores.
-// Muestra el historial de pedidos que expone B (misPedidos).
+// Muestra el historial de pedidos que expone B (misPedidos) y la cuenta:
+// datos personales, cambio de contraseña y libreta de direcciones. Cada
+// formulario es un POST con un campo `accion` (funciona sin JavaScript).
 import Layout from "../layouts/Layout.astro";
 import { graphqlServer } from "../lib/graphql";
 import { QUERY_MIS_PEDIDOS } from "../lib/queries/pedidos.js";
-import { dinero, fecha, ESTADOS_PEDIDO } from "../lib/formato.js";
+import {
+  QUERY_MI_CUENTA,
+  MUTATION_ACTUALIZAR_PERFIL,
+  MUTATION_CAMBIAR_PASSWORD,
+  MUTATION_ELIMINAR_DIRECCION,
+} from "../lib/queries/auth.js";
+import { dinero, fecha, telefono, ESTADOS_PEDIDO } from "../lib/formato.js";
+import { esPersonal, NOMBRES_ROL } from "../lib/permisos.js";
 
 type Pedido = {
   id: string;
@@ -17,6 +26,44 @@ type Pedido = {
 };
 
 const usuario = Astro.locals.user!;
+const AVISOS: Record<string, string> = {
+  perfil: "Tus datos se guardaron.",
+  password: "Tu contraseña cambió. Cerramos tus otras sesiones.",
+  direccion: "Dirección eliminada.",
+};
+let errorCuenta: string | null = null;
+
+if (Astro.request.method === "POST") {
+  const form = await Astro.request.formData();
+  const accion = String(form.get("accion"));
+  try {
+    if (accion === "perfil") {
+      await graphqlServer(Astro.cookies, MUTATION_ACTUALIZAR_PERFIL, {
+        nombre: String(form.get("nombre") ?? ""),
+        telefono: String(form.get("telefono") ?? "").trim() || null,
+      });
+    } else if (accion === "password") {
+      if (form.get("nueva") !== form.get("confirmar")) throw new Error("Las contraseñas nuevas no coinciden");
+      await graphqlServer(Astro.cookies, MUTATION_CAMBIAR_PASSWORD, {
+        actual: String(form.get("actual") ?? ""),
+        nueva: String(form.get("nueva") ?? ""),
+      });
+    } else if (accion === "direccion") {
+      await graphqlServer(Astro.cookies, MUTATION_ELIMINAR_DIRECCION, { id: String(form.get("id")) });
+    }
+    return Astro.redirect(`/perfil?ok=${accion}`, 303);
+  } catch (err) {
+    errorCuenta = err instanceof Error ? err.message : String(err);
+  }
+}
+const aviso = AVISOS[Astro.url.searchParams.get("ok") ?? ""] ?? null;
+
+let cuenta: any = null;
+try {
+  cuenta = await graphqlServer(Astro.cookies, QUERY_MI_CUENTA);
+} catch {
+  // Si falla, la página muestra los pedidos igual.
+}
 
 let pedidos: Pedido[] = [];
 let error: string | null = null;
@@ -31,12 +78,15 @@ const piezas = (p: Pedido) => p.detalles.reduce((acc, d) => acc + d.cantidad, 0)
 
 <Layout title="Perfil">
   <section class="perfil-view">
-    <h2>Bienvenido, {usuario.nombre}</h2>
-    <p class="muted">{usuario.email}{usuario.rol === "ADMIN" && " · Administrador"}</p>
+    <h2>Bienvenido, {cuenta?.me.nombre ?? usuario.nombre}</h2>
+    <p class="muted">
+      {usuario.email}
+      {esPersonal(usuario) && ` · ${NOMBRES_ROL[usuario.rol as keyof typeof NOMBRES_ROL] ?? usuario.rol}`}
+    </p>
 
     <div class="perfil-view__acciones">
       <a class="btn btn--primario" href="/carrito">🛒 Ir al carrito</a>
-      {usuario.rol === "ADMIN" && <a class="btn" href="/admin">Panel de administración</a>}
+      {esPersonal(usuario) && <a class="btn" href="/admin">Panel de administración</a>}
 
       <form method="POST" action="/logout">
         <button class="btn btn--link" type="submit">Cerrar sesión</button>
@@ -72,6 +122,82 @@ const piezas = (p: Pedido) => p.detalles.reduce((acc, d) => acc + d.cantidad, 0)
             </li>
           ))}
         </ul>
+      )
+    }
+
+    <h3 class="perfil-view__subtitulo">Mi cuenta</h3>
+    {aviso && <div class="confirmacion-box"><span>✓ {aviso}</span></div>}
+    {
+      errorCuenta && (
+        <div class="error-box" role="alert">
+          <p>{errorCuenta}</p>
+        </div>
+      )
+    }
+    {
+      cuenta && (
+        <div class="perfil-cuenta">
+          <form method="post">
+            <h3>Mis datos</h3>
+            <input type="hidden" name="accion" value="perfil" />
+            <label>
+              Nombre
+              <input type="text" name="nombre" required minlength="2" maxlength="80" value={cuenta.me.nombre} autocomplete="name" />
+            </label>
+            <label>
+              Teléfono (10 dígitos)
+              <input type="tel" name="telefono" maxlength="14" value={cuenta.me.telefono ?? ""} autocomplete="tel-national" />
+            </label>
+            <button class="btn" type="submit">Guardar</button>
+          </form>
+
+          <form method="post">
+            <h3>Cambiar contraseña</h3>
+            <input type="hidden" name="accion" value="password" />
+            <label>
+              Contraseña actual
+              <input type="password" name="actual" required autocomplete="current-password" />
+            </label>
+            <label>
+              Contraseña nueva
+              <input type="password" name="nueva" required minlength="6" maxlength="72" autocomplete="new-password" />
+            </label>
+            <label>
+              Repite la contraseña nueva
+              <input type="password" name="confirmar" required minlength="6" maxlength="72" autocomplete="new-password" />
+            </label>
+            <button class="btn" type="submit">Cambiar contraseña</button>
+          </form>
+        </div>
+      )
+    }
+    {
+      cuenta && (
+        <div class="perfil-direcciones">
+          <h3>Mis direcciones</h3>
+          {cuenta.misDirecciones.length === 0 ? (
+            <p class="muted">Todavía no guardas direcciones. Se agregan al pagar un pedido.</p>
+          ) : (
+            <ul>
+              {cuenta.misDirecciones.map((d: any) => (
+                <li>
+                  <address class="direccion">
+                    <strong>{d.nombre}</strong> · {telefono(d.telefono)}
+                    <br />
+                    {d.calle}, {d.colonia}, {d.ciudad}, {d.estado}, C.P. {d.cp}
+                  </address>
+                  <form method="post" onsubmit="return confirm('¿Borrar esta dirección? Tus pedidos la conservan.')">
+                    <input type="hidden" name="accion" value="direccion" />
+                    <input type="hidden" name="id" value={d.id} />
+                    <button class="btn btn--chico btn--peligro" type="submit">
+                      Borrar
+                    </button>
+                  </form>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
       )
     }
   </section>

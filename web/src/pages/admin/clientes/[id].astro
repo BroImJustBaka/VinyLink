@@ -1,0 +1,194 @@
+---
+// Panel admin → ficha de un cliente: datos, lo que ha comprado, sus pedidos
+// y direcciones. Acciones (permiso "clientes"): bloquear o desbloquear la
+// cuenta y mandarle por correo un link para elegir otra contraseña.
+import Layout from "../../../layouts/Layout.astro";
+import AdminNav from "../../../components/admin/AdminNav.astro";
+import { graphqlServer } from "../../../lib/graphql";
+import {
+  QUERY_ADMIN_CLIENTE,
+  MUTATION_BLOQUEAR_USUARIO,
+  MUTATION_RESTABLECER_CLIENTE,
+} from "../../../lib/queries/admin.js";
+import { dinero, fecha, fechaHora, telefono, ESTADOS_PEDIDO, METODOS_PAGO } from "../../../lib/formato.js";
+import { puede, NOMBRES_ROL } from "../../../lib/permisos.js";
+
+const { id } = Astro.params;
+const yo = Astro.locals.user!;
+const AVISOS: Record<string, string> = {
+  bloquear: "Cuenta bloqueada: ya no puede iniciar sesión y se cerraron sus sesiones.",
+  desbloquear: "Cuenta desbloqueada.",
+  restablecer: "Le mandamos un correo con el link para elegir una contraseña nueva (vence en 1 hora).",
+};
+let error: string | null = null;
+
+if (Astro.request.method === "POST") {
+  const form = await Astro.request.formData();
+  const accion = String(form.get("accion"));
+  try {
+    if (accion === "restablecer") {
+      await graphqlServer(Astro.cookies, MUTATION_RESTABLECER_CLIENTE, { id });
+    } else {
+      await graphqlServer(Astro.cookies, MUTATION_BLOQUEAR_USUARIO, { id, bloqueado: accion === "bloquear" });
+    }
+    return Astro.redirect(`/admin/clientes/${id}?ok=${accion}`, 303);
+  } catch (err) {
+    error = err instanceof Error ? err.message : String(err);
+  }
+}
+
+let c: any = null;
+try {
+  ({ adminCliente: c } = await graphqlServer(Astro.cookies, QUERY_ADMIN_CLIENTE, { id }));
+} catch (err) {
+  error ??= err instanceof Error ? err.message : String(err);
+}
+if (!error && !c) return Astro.rewrite("/404");
+const aviso = AVISOS[Astro.url.searchParams.get("ok") ?? ""] ?? null;
+const esYo = c?.usuario.id === yo.id;
+// Bloquear a alguien del personal requiere ser ADMIN (permiso "usuarios").
+const puedeBloquear = !esYo && (c?.usuario.rol === "CLIENTE" || puede(yo, "usuarios"));
+---
+
+<Layout title={`${c?.usuario.nombre ?? "Cliente"} · Admin`}>
+  <Fragment slot="sidebar"><AdminNav /></Fragment>
+
+  <section class="admin">
+    <a class="btn btn--link" href="/admin/clientes">← Clientes</a>
+
+    {aviso && <div class="confirmacion-box"><span>✓ {aviso}</span></div>}
+    {
+      error && (
+        <div class="error-box" role="alert">
+          <p>{error}</p>
+        </div>
+      )
+    }
+
+    {
+      c && (
+        <>
+          <div class="pedido-view__cabecera">
+            <h2>{c.usuario.nombre}</h2>
+            <span class:list={["etiqueta", c.usuario.activo ? "etiqueta--ok" : "etiqueta--peligro"]}>
+              {c.usuario.activo ? "Activo" : "Bloqueado"}
+            </span>
+          </div>
+
+          <div class="kpis">
+            <div class="kpi">
+              <span class="kpi__etiqueta">Pedidos pagados</span>
+              <strong class="kpi__valor">{c.pedidosPagados}</strong>
+            </div>
+            <div class="kpi">
+              <span class="kpi__etiqueta">Total comprado</span>
+              <strong class="kpi__valor">{dinero(c.totalGastado)}</strong>
+            </div>
+            <div class="kpi">
+              <span class="kpi__etiqueta">Ticket promedio</span>
+              <strong class="kpi__valor">{dinero(c.ticketPromedio)}</strong>
+            </div>
+            <div class="kpi">
+              <span class="kpi__etiqueta">Cliente desde</span>
+              <strong class="kpi__valor">{fecha(c.creadoEn)}</strong>
+            </div>
+          </div>
+
+          <div class="admin__fila">
+            <div class="panel-card">
+              <h3>Datos</h3>
+              <dl class="datos">
+                <dt>Email</dt>
+                <dd>
+                  <a href={`mailto:${c.usuario.email}`}>{c.usuario.email}</a>
+                </dd>
+                <dt>Teléfono</dt>
+                <dd>{telefono(c.usuario.telefono)}</dd>
+                <dt>Rol</dt>
+                <dd>{NOMBRES_ROL[c.usuario.rol as keyof typeof NOMBRES_ROL] ?? c.usuario.rol}</dd>
+                <dt>Último pedido</dt>
+                <dd>{fechaHora(c.ultimoPedido)}</dd>
+              </dl>
+              <div class="acciones-admin">
+                {c.usuario.activo && (
+                  <form method="post">
+                    <input type="hidden" name="accion" value="restablecer" />
+                    <button class="btn" type="submit">Mandar link de contraseña</button>
+                  </form>
+                )}
+                {puedeBloquear && (
+                  <form
+                    method="post"
+                    onsubmit={c.usuario.activo ? "return confirm('¿Bloquear esta cuenta? Se cerrarán sus sesiones.')" : undefined}
+                  >
+                    <input type="hidden" name="accion" value={c.usuario.activo ? "bloquear" : "desbloquear"} />
+                    <button class:list={["btn", { "btn--peligro": c.usuario.activo }]} type="submit">
+                      {c.usuario.activo ? "Bloquear cuenta" : "Desbloquear cuenta"}
+                    </button>
+                  </form>
+                )}
+              </div>
+            </div>
+
+            <div class="panel-card">
+              <h3>Direcciones guardadas</h3>
+              {c.direcciones.length === 0 ? (
+                <p class="muted">No tiene direcciones en su libreta.</p>
+              ) : (
+                <ul class="lista-simple">
+                  {c.direcciones.map((d: any) => (
+                    <li>
+                      <address class="direccion">
+                        <strong>{d.nombre}</strong> · {telefono(d.telefono)}
+                        <br />
+                        {d.calle}, {d.colonia}, {d.ciudad}, {d.estado}, C.P. {d.cp}
+                      </address>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          </div>
+
+          <div class="panel-card">
+            <h3>Pedidos ({c.pedidos.length})</h3>
+            {c.pedidos.length === 0 ? (
+              <p class="muted">Todavía no tiene pedidos.</p>
+            ) : (
+              <div class="tabla-scroll">
+                <table class="tabla">
+                  <thead>
+                    <tr>
+                      <th scope="col">Pedido</th>
+                      <th scope="col">Fecha</th>
+                      <th scope="col">Método</th>
+                      <th scope="col">Estado</th>
+                      <th scope="col" class="num">Total</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {c.pedidos.map((p: any) => (
+                      <tr>
+                        <td>
+                          <a href={`/admin/pedidos/${p.id}`}>#{p.id}</a>
+                        </td>
+                        <td class="fecha">{fechaHora(p.fecha)}</td>
+                        <td>{METODOS_PAGO[p.metodoPago as keyof typeof METODOS_PAGO] ?? "Sin registro"}</td>
+                        <td>
+                          <span class={`estado estado--${p.estado}`}>
+                            {ESTADOS_PEDIDO[p.estado as keyof typeof ESTADOS_PEDIDO] ?? p.estado}
+                          </span>
+                        </td>
+                        <td class="num">{dinero(p.total)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </>
+      )
+    }
+  </section>
+</Layout>

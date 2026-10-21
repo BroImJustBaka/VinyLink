@@ -1,45 +1,76 @@
 ---
-// Panel admin → Productos (inventario). Lista con precio y stock, filtro por
-// categoría y botón para eliminar (POST). Crear y editar viven en
-// /admin/productos/[id] ("nuevo" para crear).
+// Panel admin → Productos. Lista con SKU, precio, stock y si está a la venta;
+// búsqueda (nombre o SKU) y filtro por categoría. Desde aquí se activa o
+// desactiva un producto y se elimina uno que nunca se vendió (POST con
+// `accion`). Crear y editar viven en /admin/productos/[id] ("nuevo" para crear).
 import Layout from "../../../layouts/Layout.astro";
 import AdminNav from "../../../components/admin/AdminNav.astro";
 import { graphqlServer } from "../../../lib/graphql";
-import { QUERY_ADMIN_PRODUCTOS, MUTATION_ELIMINAR_PRODUCTO } from "../../../lib/queries/admin.js";
+import {
+  QUERY_ADMIN_PRODUCTOS,
+  MUTATION_ELIMINAR_PRODUCTO,
+  MUTATION_ACTIVO_PRODUCTO,
+} from "../../../lib/queries/admin.js";
 import { dinero } from "../../../lib/formato.js";
+import { puede } from "../../../lib/permisos.js";
 
 const AVISOS: Record<string, string> = {
   creado: "Producto creado.",
   guardado: "Cambios guardados.",
   eliminado: "Producto eliminado.",
+  activado: "El producto ya se ve en la tienda.",
+  desactivado: "El producto ya no se ve en la tienda (conserva su historial).",
 };
 
 let error: string | null = null;
+const params = Astro.url.searchParams;
 
 if (Astro.request.method === "POST") {
   const form = await Astro.request.formData();
+  const id = String(form.get("id"));
+  const accion = String(form.get("accion") ?? "eliminar");
   try {
-    await graphqlServer(Astro.cookies, MUTATION_ELIMINAR_PRODUCTO, { id: String(form.get("id")) });
-    return Astro.redirect("/admin/productos?ok=eliminado", 303);
+    if (accion === "eliminar") {
+      await graphqlServer(Astro.cookies, MUTATION_ELIMINAR_PRODUCTO, { id });
+      return Astro.redirect("/admin/productos?ok=eliminado", 303);
+    }
+    const activo = accion === "activar";
+    await graphqlServer(Astro.cookies, MUTATION_ACTIVO_PRODUCTO, { id, activo });
+    return Astro.redirect(`/admin/productos?ok=${activo ? "activado" : "desactivado"}`, 303);
   } catch (err) {
     error = err instanceof Error ? err.message : String(err);
   }
 }
 
-const aviso = AVISOS[Astro.url.searchParams.get("ok") ?? ""] ?? null;
-const categoriaId = Astro.url.searchParams.get("categoria") || null;
+const aviso = AVISOS[params.get("ok") ?? ""] ?? null;
+const categoriaId = params.get("categoria") || null;
+const buscar = (params.get("buscar") ?? "").trim() || null;
+const verInactivos = params.get("estado");
 
 let productos: any[] = [];
 let categorias: any[] = [];
 try {
-  const datos = await graphqlServer(Astro.cookies, QUERY_ADMIN_PRODUCTOS);
+  const datos = await graphqlServer(Astro.cookies, QUERY_ADMIN_PRODUCTOS, { buscar, categoriaId });
   productos = datos.productos.items;
   categorias = datos.categorias;
 } catch (err) {
   error ??= err instanceof Error ? err.message : String(err);
 }
 
-const visibles = categoriaId ? productos.filter((p) => p.categoria.id === categoriaId) : productos;
+const visibles =
+  verInactivos === "inactivos"
+    ? productos.filter((p) => !p.activo)
+    : verInactivos === "activos"
+      ? productos.filter((p) => p.activo)
+      : productos;
+const enlace = (cambios: Record<string, string | null>) => {
+  const p = new URLSearchParams(params);
+  p.delete("ok");
+  for (const [k, v] of Object.entries(cambios)) v ? p.set(k, v) : p.delete(k);
+  const q = p.toString();
+  return `/admin/productos${q ? `?${q}` : ""}`;
+};
+const exportar = puede(Astro.locals.user, "reportes") || puede(Astro.locals.user, "inventario");
 ---
 
 <Layout title="Productos · Admin">
@@ -51,7 +82,10 @@ const visibles = categoriaId ? productos.filter((p) => p.categoria.id === catego
         <h2>Productos</h2>
         <p class="muted">{visibles.length} {visibles.length === 1 ? "producto" : "productos"}</p>
       </div>
-      <a class="btn btn--primario" href="/admin/productos/nuevo">+ Nuevo producto</a>
+      <div class="admin__botones">
+        {exportar && <a class="btn" href="/admin/exportar/productos.csv" download>⬇ CSV</a>}
+        <a class="btn btn--primario" href="/admin/productos/nuevo">+ Nuevo producto</a>
+      </div>
     </div>
 
     {aviso && <div class="confirmacion-box"><span>✓ {aviso}</span></div>}
@@ -63,17 +97,31 @@ const visibles = categoriaId ? productos.filter((p) => p.categoria.id === catego
       )
     }
 
+    <form class="filtros" method="get" action="/admin/productos">
+      {categoriaId && <input type="hidden" name="categoria" value={categoriaId} />}
+      <label class="filtros__buscar">
+        Buscar
+        <input type="search" name="buscar" value={buscar ?? ""} placeholder="Nombre o SKU" />
+      </label>
+      <label>
+        Estado
+        <select name="estado">
+          <option value="">Todos</option>
+          <option value="activos" selected={verInactivos === "activos"}>A la venta</option>
+          <option value="inactivos" selected={verInactivos === "inactivos"}>Inactivos</option>
+        </select>
+      </label>
+      <button class="btn btn--primario" type="submit">Filtrar</button>
+    </form>
+
     <nav class="periodos" aria-label="Categoría">
-      <a
-        href="/admin/productos"
-        class:list={["periodos__opcion", { "periodos__opcion--activa": !categoriaId }]}
-      >
+      <a href={enlace({ categoria: null })} class:list={["periodos__opcion", { "periodos__opcion--activa": !categoriaId }]}>
         Todas
       </a>
       {
         categorias.map((c) => (
           <a
-            href={`/admin/productos?categoria=${c.id}`}
+            href={enlace({ categoria: c.id })}
             class:list={["periodos__opcion", { "periodos__opcion--activa": c.id === categoriaId }]}
           >
             {c.nombre}
@@ -83,7 +131,9 @@ const visibles = categoriaId ? productos.filter((p) => p.categoria.id === catego
     </nav>
 
     {
-      visibles.length > 0 && (
+      visibles.length === 0 ? (
+        <p class="muted vacio">No hay productos con estos filtros.</p>
+      ) : (
         <div class="panel-card">
           <div class="tabla-scroll">
             <table class="tabla tabla--productos">
@@ -93,6 +143,7 @@ const visibles = categoriaId ? productos.filter((p) => p.categoria.id === catego
                   <th scope="col">Categoría</th>
                   <th scope="col" class="num">Precio</th>
                   <th scope="col" class="num">Stock</th>
+                  <th scope="col">Estado</th>
                   <th scope="col">
                     <span class="sr-only">Acciones</span>
                   </th>
@@ -100,30 +151,49 @@ const visibles = categoriaId ? productos.filter((p) => p.categoria.id === catego
               </thead>
               <tbody>
                 {visibles.map((p) => (
-                  <tr>
+                  <tr class:list={{ "fila--inactiva": !p.activo }}>
                     <td>
                       <span class="tabla__producto">
                         <img src={p.imagen} alt="" />
-                        <a href={`/admin/productos/${p.id}`}>{p.nombre}</a>
+                        <span>
+                          <a href={`/admin/productos/${p.id}`}>{p.nombre}</a>
+                          {p.sku && <span class="muted tabla__sub">{p.sku}</span>}
+                        </span>
                       </span>
                     </td>
                     <td>{p.categoria.nombre}</td>
                     <td class="num">{dinero(p.precio)}</td>
                     <td class="num">
-                      <span class:list={["stock", { "stock--bajo": p.stock > 0 && p.stock <= 5, "stock--agotado": p.stock === 0 }]}>
+                      <span
+                        class:list={["stock", { "stock--bajo": p.stock > 0 && p.stock <= p.stockMinimo, "stock--agotado": p.stock === 0 }]}
+                        title={`Mínimo: ${p.stockMinimo}`}
+                      >
                         {p.stock === 0 ? "Agotado" : p.stock}
+                      </span>
+                    </td>
+                    <td>
+                      <span class:list={["etiqueta", p.activo ? "etiqueta--ok" : "etiqueta--apagada"]}>
+                        {p.activo ? "A la venta" : "Inactivo"}
                       </span>
                     </td>
                     <td class="tabla__acciones">
                       <a class="btn btn--chico" href={`/admin/productos/${p.id}`}>
                         Editar
                       </a>
+                      <form method="post" action={enlace({})}>
+                        <input type="hidden" name="id" value={p.id} />
+                        <input type="hidden" name="accion" value={p.activo ? "desactivar" : "activar"} />
+                        <button class="btn btn--chico" type="submit">
+                          {p.activo ? "Desactivar" : "Activar"}
+                        </button>
+                      </form>
                       <form
                         method="post"
-                        action="/admin/productos"
-                        onsubmit="return confirm('¿Eliminar este producto? No se puede deshacer.')"
+                        action={enlace({})}
+                        onsubmit="return confirm('¿Eliminar este producto? Solo se puede si nunca se ha vendido.')"
                       >
                         <input type="hidden" name="id" value={p.id} />
+                        <input type="hidden" name="accion" value="eliminar" />
                         <button class="btn btn--chico btn--peligro" type="submit">
                           Eliminar
                         </button>

@@ -1,0 +1,219 @@
+/* ============================================================
+   Envío, cupones, línea de tiempo y tiempo real. Lo usan la tienda
+   (checkout, pedido, perfil) y el panel; se importa en Layout.astro.
+   ============================================================ */
+
+/* Aviso "este pedido cambió" (isla PedidoEnVivo) y "llegaron pedidos". */
+.aviso-vivo {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  background: #e3e9ee;
+  border: 1px solid rgba(47, 68, 84, 0.25);
+  color: #2f4454;
+  padding: 10px 14px;
+  border-radius: 8px;
+}
+.aviso-vivo[hidden] {
+  display: none;
+}
+
+.direccion {
+  font-style: normal;
+  line-height: 1.5;
+  font-size: 0.92rem;
+}
+
+/* --- Línea de tiempo del pedido --- */
+.linea-tiempo {
+  list-style: none;
+  margin: 0;
+  padding: 0 0 0 16px;
+  border-left: 2px solid var(--beige);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.linea-tiempo__item {
+  position: relative;
+}
+.linea-tiempo__item::before {
+  content: "";
+  position: absolute;
+  left: -22px;
+  top: 5px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--olive);
+}
+.linea-tiempo__item--nota::before {
+  background: var(--mustard);
+}
+.linea-tiempo__item p {
+  margin: 2px 0 0;
+  font-size: 0.92rem;
+}
+.linea-tiempo__fecha {
+  font-size: 0.8rem;
+}
+
+/* --- Checkout: dirección, cupón y desglose --- */
+.checkout-seccion {
+  border: 1px solid var(--carbon-a10);
+  border-radius: 10px;
+  padding: 16px 18px;
+  margin: 0 0 18px;
+  background: var(--paper);
+  min-width: 0;
+}
+.checkout-seccion legend {
+  font-weight: 600;
+  padding: 0 6px;
+}
+.campos-direccion {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px 14px;
+}
+.campos-direccion label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.88rem;
+}
+.campos-direccion input,
+.direcciones-guardadas select,
+.cupon-form input,
+.perfil-cuenta input {
+  font: inherit;
+  padding: 8px 10px;
+  border: 1px solid var(--carbon-a20);
+  border-radius: 6px;
+  background: #fff;
+  min-width: 0;
+}
+.campos-direccion__ancho {
+  grid-column: 1 / -1;
+}
+.direcciones-guardadas {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 12px;
+  font-size: 0.9rem;
+}
+.guardar-direccion {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+  font-size: 0.88rem;
+}
+.cupon-form {
+  display: flex;
+  gap: 8px;
+  margin-top: 14px;
+}
+.cupon-form input {
+  flex: 1;
+  text-transform: uppercase;
+}
+.checkout__desglose {
+  list-style: none;
+  padding: 0;
+  margin: 10px 0 0;
+  border-top: 1px solid var(--carbon-a10);
+  font-size: 0.92rem;
+}
+.checkout__desglose li {
+  display: flex;
+  justify-content: space-between;
+  padding: 4px 0;
+}
+.checkout__ahorro {
+  color: #4f6b39;
+}
+.cupon-ok {
+  color: #4f6b39;
+  font-size: 0.88rem;
+  margin: 6px 0 0;
+}
+.cupon-error {
+  color: #8a4229;
+  font-size: 0.88rem;
+  margin: 6px 0 0;
+}
+
+/* --- Perfil: datos de la cuenta y libreta de direcciones --- */
+.perfil-cuenta {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 20px;
+  margin: 20px 0;
+}
+.perfil-cuenta form,
+.perfil-direcciones {
+  background: var(--paper);
+  border: 1px solid var(--carbon-a10);
+  border-radius: 10px;
+  padding: 16px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.perfil-cuenta label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.88rem;
+}
+.perfil-cuenta h3,
+.perfil-direcciones h3 {
+  margin: 0;
+}
+.perfil-direcciones ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.perfil-direcciones li {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  border-top: 1px solid var(--carbon-a10);
+  padding-top: 10px;
+}
+
+@media (max-width: 720px) {
+  .campos-direccion,
+  .perfil-cuenta {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* --- Página del pedido (cliente) --- */
+.pedido-view__desglose {
+  max-width: 360px;
+  margin-left: auto;
+}
+.pedido-view__extra {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 24px;
+  margin: 24px 0;
+}
+.pedido-view__extra h3 {
+  margin: 0 0 8px;
+}
+@media (max-width: 720px) {
+  .pedido-view__extra {
+    grid-template-columns: 1fr;
+  }
+}

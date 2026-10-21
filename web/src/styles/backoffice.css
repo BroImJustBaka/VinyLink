@@ -1,0 +1,297 @@
+/* ============================================================
+   Back office completo: secciones nuevas del panel. Se importa desde
+   AdminNav.astro (después de admin.css), así que solo carga en /admin.
+   ============================================================ */
+
+.sidebar__rol {
+  margin: -6px 0 6px;
+  font-size: 0.85rem;
+}
+.admin__botones {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* --- Avisos en tiempo real (isla AvisosAdmin) --- */
+.en-vivo {
+  margin: 0 0 10px;
+  font-size: 0.8rem;
+  color: var(--wood);
+}
+.en-vivo--conectado span {
+  color: #4f7a3a;
+}
+.en-vivo--conectando span {
+  color: var(--mustard);
+}
+.en-vivo--desconectado span {
+  color: var(--terracotta);
+}
+.avisos {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  z-index: 120;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: min(360px, calc(100% - 32px));
+}
+.aviso {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  background: var(--carbon);
+  color: var(--paper);
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-size: 0.9rem;
+  box-shadow: 0 12px 28px -12px var(--carbon-a45);
+  animation: aviso-entrada 0.2s ease-out;
+}
+.aviso a {
+  color: var(--paper);
+}
+.aviso__texto {
+  flex: 1;
+}
+.aviso__cerrar {
+  background: none;
+  border: 0;
+  color: inherit;
+  cursor: pointer;
+  opacity: 0.7;
+}
+.aviso--stock_bajo {
+  border-left: 4px solid var(--mustard);
+}
+.aviso--pedido_nuevo,
+.aviso--pago_recibido {
+  border-left: 4px solid #7d9a62;
+}
+.aviso--pedido_cancelado,
+.aviso--reembolso {
+  border-left: 4px solid var(--terracotta);
+}
+@keyframes aviso-entrada {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+}
+
+/* --- Etiquetas y tablas --- */
+.etiqueta {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  background: var(--cream);
+  color: var(--wood);
+  border: 1px solid var(--carbon-a10);
+  white-space: nowrap;
+}
+td > .etiqueta:first-child {
+  margin-left: 0;
+}
+.etiqueta--ok {
+  background: #e6ecdc;
+  color: #3f4a2c;
+}
+.etiqueta--apagada {
+  background: #f1ebe6;
+  color: #6b5446;
+}
+.etiqueta--peligro {
+  background: #f3e6e0;
+  color: #8a4229;
+  border-color: rgba(182, 95, 69, 0.35);
+}
+.fila--inactiva td {
+  opacity: 0.72;
+}
+.fila--elegida td {
+  background: var(--cream);
+}
+.miniatura {
+  width: 48px;
+  height: 48px;
+  object-fit: cover;
+  border-radius: 6px;
+}
+.centro {
+  text-align: center;
+}
+.mov {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.mov--entra {
+  color: #4f6b39;
+}
+.mov--sale {
+  color: #8a4229;
+}
+.cupon-chip {
+  display: inline-block;
+  font-family: ui-monospace, "Cascadia Mono", monospace;
+  font-size: 0.85rem;
+  padding: 1px 8px;
+  border: 1px dashed var(--olive);
+  border-radius: 4px;
+  color: var(--olive);
+  background: #f4f5ee;
+}
+.bitacora__detalle {
+  font-size: 0.85rem;
+  color: var(--wood);
+  max-width: 360px;
+  overflow-wrap: anywhere;
+}
+.lista-simple {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+/* --- Formularios --- */
+.formulario-linea {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: flex-end;
+}
+.formulario-linea label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.85rem;
+}
+.formulario-linea input,
+.acciones-admin__envio select,
+.acciones-admin__envio input,
+.nota-form textarea,
+.reporte__fechas input {
+  padding: 7px 10px;
+  border: 1px solid var(--carbon-a20);
+  border-radius: 6px;
+  font: inherit;
+  background: var(--paper);
+  min-width: 0;
+}
+.formulario-linea__ancho {
+  flex: 1 1 220px;
+}
+.formulario-admin--ancho {
+  max-width: none;
+}
+.campo-solo-lectura {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 0.9rem;
+}
+.campo-solo-lectura a {
+  font-size: 0.85rem;
+}
+label.casilla {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+}
+.subir-imagen input[type="file"] {
+  font-size: 0.85rem;
+}
+.input-chico {
+  width: 110px;
+  margin-left: 6px;
+}
+.opciones-linea {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.opciones-linea legend {
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+.acciones-admin__envio {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: flex-end;
+}
+.acciones-admin__envio label,
+.nota-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.85rem;
+}
+.acciones-admin__detalle {
+  margin-top: 14px;
+  border-top: 1px solid var(--carbon-a10);
+  padding-top: 12px;
+}
+.acciones-admin__detalle summary {
+  cursor: pointer;
+  font-weight: 600;
+  margin-bottom: 10px;
+}
+.nota-form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 12px;
+}
+.nota-form .btn {
+  align-self: flex-start;
+}
+
+/* --- Reportes y correos --- */
+.reportes {
+  display: grid;
+}
+.reporte {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 12px;
+  align-items: center;
+  padding: 12px 0;
+  border-top: 1px solid var(--carbon-a10);
+}
+.reporte p {
+  margin: 2px 0 0;
+  font-size: 0.85rem;
+}
+.reporte__fechas {
+  display: flex;
+  gap: 8px;
+  font-size: 0.85rem;
+}
+.vista-correo {
+  width: 100%;
+  height: 520px;
+  border: 1px solid var(--carbon-a10);
+  border-radius: 8px;
+  background: #f4efe6;
+  margin: 10px 0;
+}
+
+@media (max-width: 900px) {
+  .reporte {
+    grid-template-columns: 1fr;
+  }
+  .reporte__fechas {
+    flex-wrap: wrap;
+  }
+}

@@ -1,33 +1,31 @@
 ---
 // Menú lateral del panel admin. Se usa en <Fragment slot="sidebar">.
+// Solo muestra las secciones que permite el rol del usuario (lib/permisos.js).
 // La sección activa se calcula con la URL actual. Importa admin.css, así
 // los estilos del panel solo se cargan en las páginas que lo usan.
+// También monta la isla de avisos en tiempo real (subscription eventosAdmin).
 import "../../styles/admin.css";
+import "../../styles/backoffice.css";
+import AvisosAdmin from "./AvisosAdmin.jsx";
+import { seccionesDe, seccionDe, NOMBRES_ROL } from "../../lib/permisos.js";
 
-const SECCIONES = [
-  { href: "/admin", nombre: "Resumen" },
-  { href: "/admin/pedidos", nombre: "Pedidos" },
-  { href: "/admin/productos", nombre: "Productos" },
-  { href: "/admin/clientes", nombre: "Clientes" },
-  { href: "/admin/links", nombre: "Links de pago" },
-];
-
-const ruta = Astro.url.pathname.replace(/\/$/, "") || "/";
-// "/admin" solo está activo en el resumen; las demás también en sus subrutas.
-const activa = (href: string) =>
-  href === "/admin" ? ruta === "/admin" : ruta === href || ruta.startsWith(`${href}/`);
+const user = Astro.locals.user!;
+const secciones = seccionesDe(user);
+const actual = seccionDe(Astro.url.pathname)?.href;
 ---
 
 <aside class="sidebar">
   <h3>Administración</h3>
+  <p class="muted sidebar__rol">{NOMBRES_ROL[user.rol as keyof typeof NOMBRES_ROL] ?? user.rol}</p>
+  <AvisosAdmin client:only="react" />
   <ul>
     {
-      SECCIONES.map((s) => (
+      secciones.map((s) => (
         <li>
           <a
             href={s.href}
-            class:list={["sidebar__item", { "sidebar__item--activo": activa(s.href) }]}
-            aria-current={activa(s.href) ? "page" : undefined}
+            class:list={["sidebar__item", { "sidebar__item--activo": s.href === actual }]}
+            aria-current={s.href === actual ? "page" : undefined}
           >
             {s.nombre}
           </a>

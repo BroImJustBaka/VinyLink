@@ -2,13 +2,19 @@
 // Panel admin → detalle de un pedido y sus acciones. Cada botón es un
 // formulario POST con un campo `accion`; al terminar se redirige a la misma
 // página (patrón Post/Redirect/Get) para que recargar no repita la acción.
+// Los botones se muestran según el estado del pedido Y los permisos del rol
+// (el backend vuelve a revisar ambos). La isla PedidoEnVivo avisa si alguien
+// más cambia el pedido mientras está abierto (subscription pedidoActualizado).
 import Layout from "../../../layouts/Layout.astro";
 import AdminNav from "../../../components/admin/AdminNav.astro";
+import PedidoEnVivo from "../../../components/pagos/PedidoEnVivo.jsx";
 import { graphqlServer } from "../../../lib/graphql";
 import {
   QUERY_ADMIN_PEDIDO,
   MUTATION_ACTUALIZAR_ESTADO,
+  MUTATION_ACTUALIZAR_GUIA,
   MUTATION_REEMBOLSAR,
+  MUTATION_NOTA_PEDIDO,
 } from "../../../lib/queries/admin.js";
 import {
   MUTATION_CANCELAR_PEDIDO,
@@ -18,38 +24,66 @@ import {
   dinero,
   fechaHora,
   enGrupos,
+  telefono,
   ESTADOS_PEDIDO,
   ESTADOS_PAGO,
   METODOS_PAGO,
   MARCAS_TARJETA,
 } from "../../../lib/formato.js";
+import { puede } from "../../../lib/permisos.js";
 
 const { id } = Astro.params;
+const user = Astro.locals.user;
 
 // Mensajes fijos de éxito (?ok=clave): así nadie puede inyectar texto por la URL.
 const AVISOS: Record<string, string> = {
-  enviado: "Pedido marcado como enviado.",
+  enviado: "Pedido marcado como enviado. Le avisamos al cliente por correo.",
   entregado: "Pedido marcado como entregado.",
+  guia: "Guía actualizada.",
   cancelar: "Pedido cancelado; el stock regresó al inventario.",
   reembolsar: "Reembolso hecho en Stripe.",
+  parcial: "Reembolso parcial hecho en Stripe.",
   sincronizar: "Estado revisado con Stripe.",
+  nota: "Nota agregada.",
 };
 
 let error: string | null = null;
 
 if (Astro.request.method === "POST") {
   const form = await Astro.request.formData();
-  const accion = String(form.get("accion") ?? "");
+  let accion = String(form.get("accion") ?? "");
+  const texto = (campo: string) => String(form.get(campo) ?? "").trim();
   try {
-    if (accion === "enviado" || accion === "entregado") {
+    if (accion === "enviado") {
+      await graphqlServer(Astro.cookies, MUTATION_ACTUALIZAR_ESTADO, {
+        id,
+        estado: "enviado",
+        paqueteria: texto("paqueteria") || null,
+        numeroGuia: texto("numeroGuia") || null,
+      });
+    } else if (accion === "entregado") {
       await graphqlServer(Astro.cookies, MUTATION_ACTUALIZAR_ESTADO, { id, estado: accion });
+    } else if (accion === "guia") {
+      await graphqlServer(Astro.cookies, MUTATION_ACTUALIZAR_GUIA, {
+        id,
+        paqueteria: texto("paqueteria"),
+        numeroGuia: texto("numeroGuia"),
+      });
     } else if (accion === "cancelar") {
       await graphqlServer(Astro.cookies, MUTATION_CANCELAR_PEDIDO, { id });
     } else if (accion === "reembolsar") {
+      const monto = texto("monto");
+      const parcial = form.get("tipo") === "parcial";
+      if (parcial && !(Number(monto) > 0)) throw new Error("Escribe el monto del reembolso parcial");
       await graphqlServer(Astro.cookies, MUTATION_REEMBOLSAR, {
         id,
         reponerStock: form.get("reponerStock") === "on",
+        monto: parcial ? Number(monto) : null,
+        motivo: texto("motivo") || null,
       });
+      if (parcial) accion = "parcial";
+    } else if (accion === "nota") {
+      await graphqlServer(Astro.cookies, MUTATION_NOTA_PEDIDO, { pedidoId: id, texto: texto("texto") });
     } else if (accion === "sincronizar") {
       await graphqlServer(Astro.cookies, MUTATION_SINCRONIZAR_PAGO, { pedidoId: id });
     } else {
@@ -65,10 +99,14 @@ const aviso = AVISOS[Astro.url.searchParams.get("ok") ?? ""] ?? null;
 
 let pedido: any = null;
 let modoPrueba = false;
+let paqueterias: string[] = [];
+let ivaPorcentaje = 16;
 try {
   const datos = await graphqlServer(Astro.cookies, QUERY_ADMIN_PEDIDO, { id });
   pedido = datos.pedido;
   modoPrueba = datos.configPagos.modoPrueba;
+  paqueterias = datos.configuracionTienda.paqueterias;
+  ivaPorcentaje = datos.configuracionTienda.ivaPorcentaje;
 } catch (err) {
   error ??= err instanceof Error ? err.message : String(err);
 }
@@ -77,12 +115,18 @@ if (!error && !pedido) return Astro.rewrite("/404");
 const pago = pedido?.pago;
 const pagado = ["pagado", "enviado", "entregado"].includes(pedido?.estado);
 const conTarjeta = Boolean(pago?.tarjeta);
+const restante = pedido ? Math.round((pedido.total - pedido.montoReembolsado) * 100) / 100 : 0;
 const acciones = {
-  enviar: pedido?.estado === "pagado",
-  entregar: pedido?.estado === "enviado",
-  cancelar: pedido?.estado === "pendiente" && !(pago?.oxxo && pago.estado === "requiere_accion"),
-  reembolsar: pagado && pago?.estado === "pagado" && conTarjeta,
+  enviar: pedido?.estado === "pagado" && puede(user, "pedidos.envio"),
+  entregar: pedido?.estado === "enviado" && puede(user, "pedidos.envio"),
+  guia: ["enviado", "entregado"].includes(pedido?.estado) && puede(user, "pedidos.envio"),
+  cancelar:
+    pedido?.estado === "pendiente" &&
+    !(pago?.oxxo && pago.estado === "requiere_accion") &&
+    puede(user, "pedidos.cancelar"),
+  reembolsar: pagado && pago?.estado === "pagado" && conTarjeta && restante > 0 && puede(user, "reembolsos"),
   sincronizar: Boolean(pago),
+  nota: puede(user, "pedidos.notas"),
 };
 // Los formularios mandan a la URL sin ?ok=, para que no quede el aviso viejo.
 const accionUrl = `/admin/pedidos/${id}`;
@@ -90,6 +134,7 @@ const stripeBase = `https://dashboard.stripe.com/${modoPrueba ? "test/" : ""}pay
 const tarjeta = pago?.tarjeta
   ? `${MARCAS_TARJETA[pago.tarjeta.marca as keyof typeof MARCAS_TARJETA] ?? pago.tarjeta.marca} •••• ${pago.tarjeta.ultimos4} (${pago.tarjeta.fondos === "debit" ? "débito" : pago.tarjeta.fondos === "credit" ? "crédito" : pago.tarjeta.fondos ?? "—"})`
   : null;
+const nombreEstado = (e: string | null) => (e ? ESTADOS_PEDIDO[e as keyof typeof ESTADOS_PEDIDO] ?? e : "—");
 ---
 
 <Layout title={`Pedido #${id} · Admin`}>
@@ -110,11 +155,18 @@ const tarjeta = pago?.tarjeta
     {
       pedido && (
         <>
+          <PedidoEnVivo
+            client:only="react"
+            pedidoId={pedido.id}
+            estado={pedido.estado}
+            numeroGuia={pedido.numeroGuia}
+            montoReembolsado={pedido.montoReembolsado}
+            eventos={pedido.historial.length}
+          />
+
           <div class="pedido-view__cabecera">
             <h2>Pedido #{pedido.id}</h2>
-            <span class={`estado estado--${pedido.estado}`}>
-              {ESTADOS_PEDIDO[pedido.estado as keyof typeof ESTADOS_PEDIDO] ?? pedido.estado}
-            </span>
+            <span class={`estado estado--${pedido.estado}`}>{nombreEstado(pedido.estado)}</span>
           </div>
 
           {pedido.nota && (
@@ -131,7 +183,11 @@ const tarjeta = pago?.tarjeta
               <dl class="datos">
                 <dt>Cliente</dt>
                 <dd>
-                  {pedido.usuario.nombre}
+                  {puede(user, "clientes") ? (
+                    <a href={`/admin/clientes/${pedido.usuario.id}`}>{pedido.usuario.nombre}</a>
+                  ) : (
+                    pedido.usuario.nombre
+                  )}
                   <span class="muted tabla__sub">{pedido.usuario.email}</span>
                 </dd>
                 <dt>Fecha</dt>
@@ -140,78 +196,63 @@ const tarjeta = pago?.tarjeta
                 <dd>{METODOS_PAGO[pedido.metodoPago as keyof typeof METODOS_PAGO] ?? "Sin registro"}</dd>
                 <dt>Pagado el</dt>
                 <dd>{fechaHora(pedido.pagadoEn)}</dd>
+                <dt>Subtotal</dt>
+                <dd>{dinero(pedido.subtotal)}</dd>
+                {pedido.descuento > 0 && (
+                  <>
+                    <dt>Descuento</dt>
+                    <dd>
+                      −{dinero(pedido.descuento)} {pedido.cupon && <span class="cupon-chip">{pedido.cupon}</span>}
+                    </dd>
+                  </>
+                )}
+                <dt>Envío</dt>
+                <dd>{pedido.costoEnvio > 0 ? dinero(pedido.costoEnvio) : "Gratis"}</dd>
                 <dt>Total</dt>
                 <dd>
                   <strong>{dinero(pedido.total)}</strong>
+                  <span class="muted tabla__sub">Incluye {dinero(pedido.iva)} de IVA ({ivaPorcentaje} %)</span>
                 </dd>
+                {pedido.montoReembolsado > 0 && (
+                  <>
+                    <dt>Reembolsado</dt>
+                    <dd>{dinero(pedido.montoReembolsado)}</dd>
+                  </>
+                )}
               </dl>
             </div>
 
             <div class="panel-card">
-              <h3>Pago en Stripe</h3>
-              {!pago ? (
-                <p class="muted">Este pedido es anterior a los pagos en línea; no tiene cobro en Stripe.</p>
+              <h3>Envío</h3>
+              {pedido.envio ? (
+                <address class="direccion">
+                  <strong>{pedido.envio.nombre}</strong> · {telefono(pedido.envio.telefono)}
+                  <br />
+                  {pedido.envio.calle}, {pedido.envio.colonia}
+                  <br />
+                  {pedido.envio.ciudad}, {pedido.envio.estado}, C.P. {pedido.envio.cp}
+                  {pedido.envio.referencias && (
+                    <>
+                      <br />
+                      <span class="muted">Referencias: {pedido.envio.referencias}</span>
+                    </>
+                  )}
+                </address>
               ) : (
+                <p class="muted">Este pedido no tiene dirección de envío (pedido anterior o link creado desde el panel).</p>
+              )}
+              {pedido.numeroGuia && (
                 <dl class="datos">
-                  <dt>Estado del cobro</dt>
-                  <dd>{ESTADOS_PAGO[pago.estado as keyof typeof ESTADOS_PAGO] ?? pago.estado}</dd>
-                  {pago.error && (
+                  <dt>Paquetería</dt>
+                  <dd>{pedido.paqueteria}</dd>
+                  <dt>Guía</dt>
+                  <dd class="pago-datos__numero">{pedido.numeroGuia}</dd>
+                  <dt>Enviado el</dt>
+                  <dd>{fechaHora(pedido.enviadoEn)}</dd>
+                  {pedido.entregadoEn && (
                     <>
-                      <dt>Motivo</dt>
-                      <dd>{pago.error}</dd>
-                    </>
-                  )}
-                  {tarjeta && (
-                    <>
-                      <dt>Tarjeta</dt>
-                      <dd>{tarjeta}</dd>
-                    </>
-                  )}
-                  {pago.meses && (
-                    <>
-                      <dt>Meses sin intereses</dt>
-                      <dd>{pago.meses}</dd>
-                    </>
-                  )}
-                  {pago.oxxo && (
-                    <>
-                      <dt>Referencia OXXO</dt>
-                      <dd class="pago-datos__numero">{enGrupos(pago.oxxo.referencia)}</dd>
-                      <dt>Ficha vence</dt>
-                      <dd>{fechaHora(pago.oxxo.expiraEn)}</dd>
-                    </>
-                  )}
-                  {pago.spei && (
-                    <>
-                      <dt>CLABE</dt>
-                      <dd class="pago-datos__numero">{enGrupos(pago.spei.clabe)}</dd>
-                      {pedido.estado === "pendiente" && (
-                        <>
-                          <dt>Falta por recibir</dt>
-                          <dd>{dinero(pago.spei.montoRestante ?? pago.monto)}</dd>
-                        </>
-                      )}
-                    </>
-                  )}
-                  {pago.link?.url && (
-                    <>
-                      <dt>Link de pago</dt>
-                      <dd>
-                        <a href={pago.link.url} target="_blank" rel="noopener">
-                          Abrir link
-                        </a>{" "}
-                        · vence {fechaHora(pago.link.expiraEn)}
-                      </dd>
-                    </>
-                  )}
-                  {pago.stripePaymentIntentId && (
-                    <>
-                      <dt>Cobro en Stripe</dt>
-                      <dd>
-                        <a href={stripeBase + pago.stripePaymentIntentId} target="_blank" rel="noopener">
-                          {pago.stripePaymentIntentId}
-                        </a>
-                      </dd>
+                      <dt>Entregado el</dt>
+                      <dd>{fechaHora(pedido.entregadoEn)}</dd>
                     </>
                   )}
                 </dl>
@@ -220,11 +261,95 @@ const tarjeta = pago?.tarjeta
           </div>
 
           <div class="panel-card">
+            <h3>Pago en Stripe</h3>
+            {!pago ? (
+              <p class="muted">Este pedido es anterior a los pagos en línea; no tiene cobro en Stripe.</p>
+            ) : (
+              <dl class="datos">
+                <dt>Estado del cobro</dt>
+                <dd>{ESTADOS_PAGO[pago.estado as keyof typeof ESTADOS_PAGO] ?? pago.estado}</dd>
+                {pago.error && (
+                  <>
+                    <dt>Motivo</dt>
+                    <dd>{pago.error}</dd>
+                  </>
+                )}
+                {tarjeta && (
+                  <>
+                    <dt>Tarjeta</dt>
+                    <dd>{tarjeta}</dd>
+                  </>
+                )}
+                {pago.meses && (
+                  <>
+                    <dt>Meses sin intereses</dt>
+                    <dd>{pago.meses}</dd>
+                  </>
+                )}
+                {pago.oxxo && (
+                  <>
+                    <dt>Referencia OXXO</dt>
+                    <dd class="pago-datos__numero">{enGrupos(pago.oxxo.referencia)}</dd>
+                    <dt>Ficha vence</dt>
+                    <dd>{fechaHora(pago.oxxo.expiraEn)}</dd>
+                  </>
+                )}
+                {pago.spei && (
+                  <>
+                    <dt>CLABE</dt>
+                    <dd class="pago-datos__numero">{enGrupos(pago.spei.clabe)}</dd>
+                    {pedido.estado === "pendiente" && (
+                      <>
+                        <dt>Falta por recibir</dt>
+                        <dd>{dinero(pago.spei.montoRestante ?? pago.monto)}</dd>
+                      </>
+                    )}
+                  </>
+                )}
+                {pago.link?.url && (
+                  <>
+                    <dt>Link de pago</dt>
+                    <dd>
+                      <a href={pago.link.url} target="_blank" rel="noopener">
+                        Abrir link
+                      </a>{" "}
+                      · vence {fechaHora(pago.link.expiraEn)}
+                    </dd>
+                  </>
+                )}
+                {pago.stripePaymentIntentId && (
+                  <>
+                    <dt>Cobro en Stripe</dt>
+                    <dd>
+                      <a href={stripeBase + pago.stripePaymentIntentId} target="_blank" rel="noopener">
+                        {pago.stripePaymentIntentId}
+                      </a>
+                    </dd>
+                  </>
+                )}
+              </dl>
+            )}
+          </div>
+
+          <div class="panel-card">
             <h3>Acciones</h3>
             <div class="acciones-admin">
               {acciones.enviar && (
-                <form method="post" action={accionUrl}>
+                <form method="post" action={accionUrl} class="acciones-admin__envio">
                   <input type="hidden" name="accion" value="enviado" />
+                  <label>
+                    Paquetería
+                    <select name="paqueteria">
+                      <option value="">Sin guía (entrega local)</option>
+                      {paqueterias.map((p) => (
+                        <option value={p}>{p}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <label>
+                    Número de guía
+                    <input type="text" name="numeroGuia" maxlength="40" pattern="[A-Za-z0-9\- ]{4,40}" />
+                  </label>
                   <button class="btn btn--primario" type="submit">Marcar como enviado</button>
                 </form>
               )}
@@ -246,26 +371,68 @@ const tarjeta = pago?.tarjeta
                   <button class="btn btn--peligro" type="submit">Cancelar pedido</button>
                 </form>
               )}
-              {acciones.reembolsar && (
-                <form
-                  method="post"
-                  action={accionUrl}
-                  class="acciones-admin__reembolso"
-                  onsubmit="return confirm('¿Reembolsar el pago completo? Esto no se puede deshacer.')"
-                >
-                  <input type="hidden" name="accion" value="reembolsar" />
-                  <label>
-                    <input type="checkbox" name="reponerStock" checked /> Regresar los productos al inventario
-                  </label>
-                  <button class="btn btn--peligro" type="submit">
-                    Reembolsar {dinero(pedido.total)}
-                  </button>
-                </form>
-              )}
               {!Object.values(acciones).some(Boolean) && (
                 <p class="muted">No hay acciones disponibles para este pedido.</p>
               )}
             </div>
+
+            {acciones.guia && (
+              <details class="acciones-admin__detalle">
+                <summary>Corregir la guía</summary>
+                <form method="post" action={accionUrl} class="acciones-admin__envio">
+                  <input type="hidden" name="accion" value="guia" />
+                  <label>
+                    Paquetería
+                    <select name="paqueteria" required>
+                      {paqueterias.map((p) => (
+                        <option value={p} selected={p === pedido.paqueteria}>
+                          {p}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label>
+                    Número de guía
+                    <input type="text" name="numeroGuia" required maxlength="40" value={pedido.numeroGuia ?? ""} />
+                  </label>
+                  <button class="btn" type="submit">Guardar guía</button>
+                </form>
+              </details>
+            )}
+
+            {acciones.reembolsar && (
+              <details class="acciones-admin__detalle">
+                <summary>Reembolsar (quedan {dinero(restante)})</summary>
+                <form
+                  method="post"
+                  action={accionUrl}
+                  class="acciones-admin__reembolso"
+                  onsubmit="return confirm('¿Hacer el reembolso en Stripe? No se puede deshacer.')"
+                >
+                  <input type="hidden" name="accion" value="reembolsar" />
+                  <fieldset class="opciones-linea">
+                    <legend>¿Cuánto?</legend>
+                    <label>
+                      <input type="radio" name="tipo" value="total" checked /> Todo lo que falta ({dinero(restante)})
+                    </label>
+                    <label>
+                      <input type="radio" name="tipo" value="parcial" /> Una parte:
+                      <input type="number" name="monto" min="0.01" step="0.01" max={restante} placeholder="0.00" class="input-chico" />
+                    </label>
+                  </fieldset>
+                  <label>
+                    Motivo (lo ve el cliente en el correo)
+                    <input type="text" name="motivo" maxlength="200" placeholder="Ej. pieza dañada, cambio de opinión" />
+                  </label>
+                  <label>
+                    <input type="checkbox" name="reponerStock" checked /> En un reembolso total, regresar los productos al inventario
+                  </label>
+                  <p class="muted">Un reembolso parcial no cambia el estado del pedido ni el stock.</p>
+                  <button class="btn btn--peligro" type="submit">Reembolsar</button>
+                </form>
+              </details>
+            )}
+
             {pagado && pago && !conTarjeta && (
               <p class="muted acciones-admin__nota">
                 Los pagos en OXXO o SPEI no se pueden reembolsar desde aquí: Stripe no lo permite para OXXO, y
@@ -274,39 +441,94 @@ const tarjeta = pago?.tarjeta
             )}
           </div>
 
-          <div class="panel-card">
-            <h3>Productos</h3>
-            <div class="tabla-scroll">
-              <table class="tabla">
-                <thead>
-                  <tr>
-                    <th scope="col">Producto</th>
-                    <th scope="col" class="num">Precio</th>
-                    <th scope="col" class="num">Cantidad</th>
-                    <th scope="col" class="num">Subtotal</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {pedido.detalles.map((d: any) => (
+          <div class="admin__fila">
+            <div class="panel-card">
+              <h3>Productos</h3>
+              <div class="tabla-scroll">
+                <table class="tabla">
+                  <thead>
                     <tr>
-                      <td>
-                        <a href={`/admin/productos/${d.producto.id}`}>{d.producto.nombre}</a>
-                      </td>
-                      <td class="num">{dinero(d.precioUnitario)}</td>
-                      <td class="num">{d.cantidad}</td>
-                      <td class="num">{dinero(d.subtotal)}</td>
+                      <th scope="col">Producto</th>
+                      <th scope="col" class="num">Precio</th>
+                      <th scope="col" class="num">Cantidad</th>
+                      <th scope="col" class="num">Subtotal</th>
                     </tr>
-                  ))}
-                </tbody>
-                <tfoot>
-                  <tr>
-                    <th scope="row" colspan="3">Total</th>
-                    <td class="num">
-                      <strong>{dinero(pedido.total)}</strong>
-                    </td>
-                  </tr>
-                </tfoot>
-              </table>
+                  </thead>
+                  <tbody>
+                    {pedido.detalles.map((d: any) => (
+                      <tr>
+                        <td>
+                          <a href={`/admin/productos/${d.producto.id}`}>{d.producto.nombre}</a>
+                          {d.producto.sku && <span class="muted tabla__sub">{d.producto.sku}</span>}
+                        </td>
+                        <td class="num">{dinero(d.precioUnitario)}</td>
+                        <td class="num">{d.cantidad}</td>
+                        <td class="num">{dinero(d.subtotal)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot>
+                    <tr>
+                      <th scope="row" colspan="3">Total</th>
+                      <td class="num">
+                        <strong>{dinero(pedido.total)}</strong>
+                      </td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+              {pedido.reembolsos.length > 0 && (
+                <>
+                  <h4>Reembolsos</h4>
+                  <ul class="lista-simple">
+                    {pedido.reembolsos.map((r: any) => (
+                      <li>
+                        {dinero(r.monto)} {r.parcial ? "(parcial)" : "(total)"} · {fechaHora(r.creadoEn)}
+                        {r.autor && ` · ${r.autor}`}
+                        {r.motivo && <span class="muted tabla__sub">{r.motivo}</span>}
+                      </li>
+                    ))}
+                  </ul>
+                </>
+              )}
+            </div>
+
+            <div class="panel-card">
+              <h3>Línea de tiempo</h3>
+              <ol class="linea-tiempo">
+                {pedido.historial.map((h: any) => (
+                  <li class={`linea-tiempo__item linea-tiempo__item--${h.tipo}`}>
+                    <span class="muted linea-tiempo__fecha">{fechaHora(h.fecha)}</span>
+                    {h.tipo === "nota" ? (
+                      <p>
+                        <strong>📝 {h.autor ?? "—"}:</strong> {h.texto}
+                      </p>
+                    ) : (
+                      <p>
+                        {h.estadoAnterior ? (
+                          <>
+                            {nombreEstado(h.estadoAnterior)} → <strong>{nombreEstado(h.estadoNuevo)}</strong>
+                          </>
+                        ) : (
+                          <strong>{h.texto ?? "Pedido creado"}</strong>
+                        )}
+                        {h.estadoAnterior && h.texto && <span class="muted"> · {h.texto}</span>}
+                        <span class="muted"> · {h.autor ?? "Sistema"}</span>
+                      </p>
+                    )}
+                  </li>
+                ))}
+              </ol>
+              {acciones.nota && (
+                <form method="post" action={accionUrl} class="nota-form">
+                  <input type="hidden" name="accion" value="nota" />
+                  <label>
+                    Nota interna (el cliente no la ve)
+                    <textarea name="texto" rows="2" maxlength="2000" required></textarea>
+                  </label>
+                  <button class="btn btn--chico" type="submit">Agregar nota</button>
+                </form>
+              )}
             </div>
           </div>
         </>

@@ -1,0 +1,157 @@
+---
+// Panel admin → Bitácora de auditoría (solo ADMIN): quién hizo qué y cuándo
+// en el panel. Cada registro guarda el detalle del cambio (por ejemplo, el
+// precio antes y después). Filtros por tipo de registro y búsqueda libre.
+import Layout from "../../layouts/Layout.astro";
+import AdminNav from "../../components/admin/AdminNav.astro";
+import { graphqlServer } from "../../lib/graphql";
+import { QUERY_BITACORA } from "../../lib/queries/admin.js";
+import { fechaHora } from "../../lib/formato.js";
+
+const POR_PAGINA = 50;
+const ENTIDADES: Record<string, string> = {
+  pedido: "Pedidos",
+  producto: "Productos e inventario",
+  categoria: "Categorías",
+  proveedor: "Proveedores",
+  cupon: "Cupones",
+  usuario: "Usuarios",
+  configuracion: "Configuración",
+  correo: "Correos",
+  reporte: "Reportes",
+  imagen: "Imágenes",
+};
+// Dónde ver cada cosa en el panel.
+const RUTAS: Record<string, (id: string) => string> = {
+  pedido: (id) => `/admin/pedidos/${id}`,
+  producto: (id) => `/admin/productos/${id}`,
+  usuario: (id) => `/admin/clientes/${id}`,
+  proveedor: (id) => `/admin/proveedores?editar=${id}`,
+  cupon: (id) => `/admin/cupones?editar=${id}`,
+  correo: (id) => `/admin/correos?ver=${id}`,
+};
+
+const params = Astro.url.searchParams;
+const entidad = params.get("entidad") || null;
+const buscar = (params.get("buscar") ?? "").trim() || null;
+const pagina = Math.max(1, Number.parseInt(params.get("pagina") ?? "1", 10) || 1);
+
+let resultado = { items: [] as any[], total: 0 };
+let error: string | null = null;
+try {
+  ({ adminBitacora: resultado } = await graphqlServer(Astro.cookies, QUERY_BITACORA, {
+    entidad,
+    buscar,
+    limite: POR_PAGINA,
+    offset: (pagina - 1) * POR_PAGINA,
+  }));
+} catch (err) {
+  error = err instanceof Error ? err.message : String(err);
+}
+const paginas = Math.max(1, Math.ceil(resultado.total / POR_PAGINA));
+const enlacePagina = (n: number) => {
+  const p = new URLSearchParams(params);
+  p.set("pagina", String(n));
+  return `/admin/bitacora?${p}`;
+};
+// { "precio": [599, 549] } → "precio: 599 → 549"
+function detalle(json: string) {
+  try {
+    return Object.entries(JSON.parse(json))
+      .map(([k, v]) => (Array.isArray(v) && v.length === 2 ? `${k}: ${v[0] ?? "—"} → ${v[1] ?? "—"}` : `${k}: ${typeof v === "object" ? JSON.stringify(v) : v}`))
+      .join(" · ");
+  } catch {
+    return json;
+  }
+}
+---
+
+<Layout title="Bitácora · Admin">
+  <Fragment slot="sidebar"><AdminNav /></Fragment>
+
+  <section class="admin">
+    <div class="admin__cabecera">
+      <div>
+        <h2>Bitácora</h2>
+        <p class="muted">{resultado.total} acciones registradas del personal.</p>
+      </div>
+    </div>
+
+    {
+      error && (
+        <div class="error-box" role="alert">
+          <p>{error}</p>
+        </div>
+      )
+    }
+
+    <form class="filtros" method="get" action="/admin/bitacora">
+      <label>
+        Sobre
+        <select name="entidad">
+          <option value="">Todo</option>
+          {Object.entries(ENTIDADES).map(([valor, nombre]) => (
+            <option value={valor} selected={valor === entidad}>
+              {nombre}
+            </option>
+          ))}
+        </select>
+      </label>
+      <label class="filtros__buscar">
+        Buscar
+        <input type="search" name="buscar" value={buscar ?? ""} placeholder="Persona, acción o dato (ej. PROMO50)" />
+      </label>
+      <button class="btn btn--primario" type="submit">Filtrar</button>
+      {(entidad || buscar) && <a class="btn btn--link" href="/admin/bitacora">Quitar filtros</a>}
+    </form>
+
+    <div class="panel-card">
+      {
+        resultado.items.length === 0 ? (
+          <p class="muted">No hay registros con estos filtros.</p>
+        ) : (
+          <div class="tabla-scroll">
+            <table class="tabla">
+              <thead>
+                <tr>
+                  <th scope="col">Fecha</th>
+                  <th scope="col">Quién</th>
+                  <th scope="col">Qué hizo</th>
+                  <th scope="col">Detalle</th>
+                </tr>
+              </thead>
+              <tbody>
+                {resultado.items.map((r: any) => {
+                  const ruta = r.entidadId && RUTAS[r.entidad]?.(r.entidadId);
+                  return (
+                    <tr>
+                      <td class="fecha">{fechaHora(r.creadoEn)}</td>
+                      <td>{r.usuarioNombre ?? "Sistema"}</td>
+                      <td>
+                        {ruta ? <a href={ruta}>{r.descripcion}</a> : r.descripcion}
+                        <span class="muted tabla__sub">{r.accion}</span>
+                      </td>
+                      <td class="bitacora__detalle">{detalle(r.detalle)}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )
+      }
+    </div>
+
+    {
+      paginas > 1 && (
+        <nav class="paginacion" aria-label="Páginas">
+          {pagina > 1 ? <a class="btn" href={enlacePagina(pagina - 1)}>← Anterior</a> : <span />}
+          <span class="muted">
+            Página {pagina} de {paginas}
+          </span>
+          {pagina < paginas ? <a class="btn" href={enlacePagina(pagina + 1)}>Siguiente →</a> : <span />}
+        </nav>
+      )
+    }
+  </section>
+</Layout>
