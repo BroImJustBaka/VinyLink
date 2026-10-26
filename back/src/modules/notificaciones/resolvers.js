@@ -3,6 +3,7 @@ import { requirePermiso } from "../auth/context.js";
 import { registrar } from "../../lib/bitacora.js";
 import { ES_ID } from "../pedidos/servicio.js";
 import { correoReal, reenviarCorreo } from "./correo.js";
+import { parametroBusqueda, condicionBusqueda } from "../../lib/busqueda.js";
 
 const mapCorreo = (f) =>
   f && {
@@ -16,9 +17,8 @@ export const resolvers = {
   Query: {
     adminCorreos: async (_padre, { buscar, limite, offset }, context) => {
       requirePermiso(context, "correos");
-      const texto = (buscar ?? "").trim();
-      const patron = texto ? `%${texto.replace(/[\\%_]/g, "\\$&")}%` : null;
-      const filtro = "FROM correo WHERE ($1::text IS NULL OR para ILIKE $1 OR asunto ILIKE $1)";
+      const patron = parametroBusqueda(buscar);
+      const filtro = `FROM correo WHERE ${condicionBusqueda(["para", "asunto", "tipo"], 1)}`;
       const items = await many(
         `SELECT * ${filtro} ORDER BY creado_en DESC, id DESC LIMIT $2 OFFSET $3`,
         [patron, Math.min(Math.max(Number(limite) || 30, 1), 100), Math.max(Number(offset) || 0, 0)]

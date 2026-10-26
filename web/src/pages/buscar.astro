@@ -13,12 +13,13 @@ import { QUERY_BUSCAR } from "../lib/queries/catalogo.js";
 const q = (Astro.url.searchParams.get("q") ?? "").trim();
 
 let productos = [];
+let aproximada = false;
 let error: string | null = null;
 if (q) {
   try {
-    ({ buscarProductos: productos } = await graphqlServer(Astro.cookies, QUERY_BUSCAR, {
-      texto: q,
-    }));
+    ({
+      buscar: { productos, aproximada },
+    } = await graphqlServer(Astro.cookies, QUERY_BUSCAR, { texto: q }));
   } catch (err) {
     error = (err as Error).message;
     Astro.response.status = 502;
@@ -40,11 +41,17 @@ if (q) {
     {
       q && !error && (
         <>
-          <p class="muted">
-            {productos.length === 1
-              ? "1 producto encontrado"
-              : `${productos.length} productos encontrados`}
-          </p>
+          {aproximada ? (
+            <p class="aviso-info">
+              No encontramos exactamente “{q}”. Estos son los productos más parecidos.
+            </p>
+          ) : (
+            <p class="muted">
+              {productos.length === 1
+                ? "1 producto encontrado"
+                : `${productos.length} productos encontrados`}
+            </p>
+          )}
           {productos.length === 0 ? (
             <p class="muted vacio">
               No encontramos nada con “{q}”. Prueba con otra palabra o explora las categorías.

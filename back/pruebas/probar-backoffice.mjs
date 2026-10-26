@@ -28,6 +28,9 @@ const postgres = new EmbeddedPostgres({
   port: PUERTO_PG,
   persistent: false,
   onLog: () => {},
+  // PostgreSQL 18 en Windows deja vivo un proceso "io_worker" al apagarse,
+  // que bloquea la carpeta temporal; con io_method=sync no se crean.
+  postgresFlags: ["-c", "io_method=sync"],
 });
 console.log("Levantando PostgreSQL temporal...");
 await postgres.initialise();
@@ -55,7 +58,7 @@ async function terminar(codigo) {
   const { pool } = await import("../src/db.js");
   await pool.end();
   await db.end();
-  await postgres.stop();
+  await postgres.stop().catch(() => {}); // si falla al borrar la carpeta, se borra abajo
   await fs.rm(carpeta, { recursive: true, force: true, maxRetries: 10, retryDelay: 300 }).catch(() => {});
   process.exit(codigo);
 }
@@ -464,6 +467,53 @@ console.log("\n== Reportes ==");
 r = await intenta(() => gql(`{ adminVentasPorCategoria(dias: 30) { categoria { nombre } unidades ingresos } }`, {}, finanzas));
 const discos = r.data?.adminVentasPorCategoria.find((v) => v.categoria.nombre === "Discos");
 ok(discos?.unidades >= 1 && discos.ingresos >= 549, "ventas por categoría", r.error ?? JSON.stringify(r.data));
+
+console.log("\n== Búsqueda normalizada ==");
+const { normalizar } = await import("../src/lib/busqueda.js");
+const BUSCAR = `query($t: String!, $c: ID) { buscar(texto: $t, categoriaId: $c) { total aproximada productos { id nombre } } }`;
+const buscar = async (t, c = null, tok = cliente) => (await gql(BUSCAR, { t, c }, tok)).buscar;
+const ids = (b) => b.productos.map((x) => x.id).sort().join(",");
+const raro = "  ÁÉÍÓÚ Ñandú   Çà Über ";
+r = await db.query("SELECT normalizar($1) AS n", [raro]);
+ok(r.rows[0].n === "aeiou nandu ca uber" && normalizar(raro) === r.rows[0].n, "normalizar() de SQL y de JS dan lo mismo", JSON.stringify([r.rows[0].n, normalizar(raro)]));
+let b = await buscar("audifonos");
+ok(b.total === 3 && ids(b) === "1,2,3" && !b.aproximada, "\"audifonos\" sin acento encuentra los 3 (también por la categoría)", JSON.stringify(b));
+ok(b.productos[2].id === "3", "primero los que lo dicen en el nombre", b.productos.map((x) => x.nombre).join(" | "));
+ok(ids(await buscar("Audífonos")) === "1,2,3" && ids(await buscar("AUDÍFONOS")) === "1,2,3", "con acento y en mayúsculas: lo mismo");
+ok(ids(await buscar("audif")) === "1,2,3", "palabra a medias");
+ok(ids(await buscar("  BLUETOOTH   audíf ")) === "1", "varias palabras en cualquier orden (espacios de más)");
+ok(ids(await buscar("acustica")) === "4" && ids(await buscar("GUITARRA acúst")) === "4", "acentos en el producto: \"acustica\" encuentra \"acústica\"");
+b = await buscar("audifnos");
+ok(b.aproximada && b.productos.length >= 3 && ["1", "2", "3"].every((x) => b.productos.some((p) => p.id === x)) && !b.productos.some((p) => p.id === "5"), "error de dedo \"audifnos\" → aproximada con los audífonos", JSON.stringify(b));
+b = await buscar("thriler");
+ok(b.aproximada && b.productos[0]?.id === "8", "\"thriler\" → Vinilo \"Thriller\" primero", JSON.stringify(b));
+b = await buscar("xyzxyz");
+ok(b.total === 0 && !b.aproximada, "algo que no existe: 0 resultados", JSON.stringify(b));
+r = await intenta(() => buscar("100%_"));
+ok(r.data?.total === 0, "comodines % y _ se buscan literalmente (no truenan)", r.error ?? JSON.stringify(r.data));
+ok((await buscar("   ")).total === 0, "búsqueda vacía");
+ok(ids(await buscar("vinilo", "3")) === "7,8" && (await buscar("vinilo", "1")).total === 0, "dentro de una categoría");
+await gql(`mutation($id: ID!) { cambiarActivoProducto(id: $id, activo: false) { activo } }`, { id: pCable }, almacen);
+b = await buscar("cable plug");
+r = await intenta(() => gql(`query { productos(buscar: "CÁBLE plug", incluirInactivos: true, limit: 50) { total aproximada items { id } } }`, {}, almacen));
+ok(b.total === 0 && r.data?.productos.items[0]?.id === pCable && !r.data.productos.aproximada, "inactivo: la tienda no lo encuentra, el panel sí", JSON.stringify([b, r]));
+await gql(`mutation($id: ID!) { cambiarActivoProducto(id: $id, activo: true) { activo } }`, { id: pCable }, almacen);
+r = await intenta(() => gql(`query { productos(buscar: "acc 001", incluirInactivos: true) { items { id } } }`, {}, almacen));
+ok(r.data?.productos.items.map((x) => x.id).join() === pCable, "panel: por SKU en partes (\"acc 001\" → ACC-001)", JSON.stringify(r));
+r = await intenta(() => gql(`query { buscarProductos(texto: "audífonos") { id } }`));
+ok(r.data?.buscarProductos.length === 3, "buscarProductos (la versión anterior) también normaliza", r.error);
+for (const t of ["almacen", "ALMACÉN", "ana alm"]) {
+  r = await intenta(() => gql(`query($t: String) { adminClientes(buscar: $t) { items { usuario { nombre } } } }`, { t }, soporte));
+  ok(r.data?.adminClientes.items.some((c) => c.usuario.nombre === "Ana Almacén"), `clientes: "${t}" encuentra a "Ana Almacén"`, r.error ?? JSON.stringify(r.data));
+}
+r = await intenta(() => gql(`{ adminBitacora(buscar: "almacen") { total } }`, {}, admin));
+ok(r.data?.adminBitacora.total > 0, "bitácora sin acento", r.error);
+r = await intenta(() => gql(`{ adminCorreos(buscar: "contrasena") { total items { asunto } } }`, {}, soporte));
+ok(r.data?.adminCorreos.items.some((c) => c.asunto.includes("contraseña")), "correos: \"contrasena\" encuentra \"contraseña\"", r.error ?? JSON.stringify(r.data));
+r = await intenta(() => gql(`query($t: String) { adminPedidos(buscar: $t) { items { id } } }`, { t: `#${pVivo}` }, admin));
+ok(r.data?.adminPedidos.items.some((x) => x.id === pVivo), "pedidos: por número con #", r.error);
+r = await intenta(() => gql(`{ adminPedidos(buscar: "INVITADO fx-12") { items { id numeroGuia } } }`, {}, admin));
+ok(r.data?.adminPedidos.items.length === 1 && r.data.adminPedidos.items[0].id === pVivo, "pedidos: cliente + guía a medias", JSON.stringify(r));
 
 console.log(`\n${fallas === 0 ? "✅ TODO PASÓ" : `❌ ${fallas} FALLAS`}`);
 await terminar(fallas ? 1 : 0);

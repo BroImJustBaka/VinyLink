@@ -462,3 +462,30 @@ INSERT INTO configuracion (clave, valor) VALUES
   ('iva_porcentaje', '16'),
   ('paqueterias', '["Estafeta", "DHL", "FedEx", "Correos de México"]')
 ON CONFLICT (clave) DO NOTHING;
+
+-- ============================================================
+-- Búsqueda normalizada
+-- normalizar() quita acentos y mayúsculas y junta los espacios, para que
+-- "audifonos", "Audífonos" y "AUDÍFONOS" sean lo mismo. Se aplica a los
+-- dos lados de la comparación (lo que se escribe y lo que hay en la base).
+-- Se hace con translate() y no con la extensión unaccent para no depender
+-- de que el servidor la tenga. Las mayúsculas acentuadas van en la lista
+-- porque lower() no siempre las convierte (depende del idioma de la base).
+-- ============================================================
+CREATE OR REPLACE FUNCTION normalizar(texto TEXT) RETURNS TEXT
+  LANGUAGE sql IMMUTABLE STRICT PARALLEL SAFE AS $$
+  SELECT btrim(regexp_replace(
+           lower(translate(texto, 'áàâäãåÁÀÂÄÃÅéèêëÉÈÊËíìîïÍÌÎÏóòôöõÓÒÔÖÕúùûüÚÙÛÜñÑçÇ', 'aaaaaaaaaaaaeeeeeeeeiiiiiiiioooooooooouuuuuuuunncc')),
+           '\s+', ' ', 'g'))
+$$;
+
+-- pg_trgm compara textos por trigramas (grupos de 3 letras) y permite
+-- encontrar palabras con errores de dedo ("audifnos" → "audífonos").
+-- Si el servidor no la permite, la búsqueda sigue funcionando, solo sin
+-- esa tolerancia (el backend revisa si está instalada al buscar).
+DO $$
+BEGIN
+  CREATE EXTENSION IF NOT EXISTS pg_trgm;
+EXCEPTION WHEN OTHERS THEN
+  RAISE NOTICE 'pg_trgm no está disponible (%); la búsqueda funcionará sin tolerancia a errores.', SQLERRM;
+END $$;

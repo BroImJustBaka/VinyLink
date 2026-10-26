@@ -144,6 +144,7 @@ export const QUERY_ADMIN_PRODUCTOS = `
   query AdminProductos($buscar: String, $categoriaId: ID) {
     productos(limit: 500, incluirInactivos: true, buscar: $buscar, categoriaId: $categoriaId) {
       total
+      aproximada
       items {
         id
         nombre

@@ -49,9 +49,11 @@ const verInactivos = params.get("estado");
 
 let productos: any[] = [];
 let categorias: any[] = [];
+let aproximada = false;
 try {
   const datos = await graphqlServer(Astro.cookies, QUERY_ADMIN_PRODUCTOS, { buscar, categoriaId });
   productos = datos.productos.items;
+  aproximada = datos.productos.aproximada;
   categorias = datos.categorias;
 } catch (err) {
   error ??= err instanceof Error ? err.message : String(err);
@@ -101,7 +103,7 @@ const exportar = puede(Astro.locals.user, "reportes") || puede(Astro.locals.user
       {categoriaId && <input type="hidden" name="categoria" value={categoriaId} />}
       <label class="filtros__buscar">
         Buscar
-        <input type="search" name="buscar" value={buscar ?? ""} placeholder="Nombre o SKU" />
+        <input type="search" name="buscar" value={buscar ?? ""} placeholder="Nombre, SKU, descripción o categoría" />
       </label>
       <label>
         Estado
@@ -113,6 +115,14 @@ const exportar = puede(Astro.locals.user, "reportes") || puede(Astro.locals.user
       </label>
       <button class="btn btn--primario" type="submit">Filtrar</button>
     </form>
+
+    {
+      aproximada && (
+        <div class="aviso-info">
+          <p>No hay productos que digan exactamente “{buscar}”; estos son los más parecidos.</p>
+        </div>
+      )
+    }
 
     <nav class="periodos" aria-label="Categoría">
       <a href={enlace({ categoria: null })} class:list={["periodos__opcion", { "periodos__opcion--activa": !categoriaId }]}>

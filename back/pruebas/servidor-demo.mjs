@@ -23,6 +23,9 @@ const postgres = new EmbeddedPostgres({
   port: PUERTO_PG,
   persistent: false,
   onLog: () => {},
+  // PostgreSQL 18 en Windows deja vivo un proceso "io_worker" al apagarse,
+  // que bloquea la carpeta temporal; con io_method=sync no se crean.
+  postgresFlags: ["-c", "io_method=sync"],
 });
 console.log("Levantando PostgreSQL temporal para la demo...");
 await postgres.initialise();

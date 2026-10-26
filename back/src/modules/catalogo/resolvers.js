@@ -7,6 +7,16 @@ import { requirePermiso } from "../auth/context.js";
 import { tienePermiso } from "../auth/permisos.js";
 import { moverStock } from "../inventario/servicio.js";
 import { guardarImagen } from "./imagenes.js";
+import {
+  palabrasDe,
+  parametroBusqueda,
+  parametroParecido,
+  condicionBusqueda,
+  condicionParecida,
+  puntajeBusqueda,
+  puntajeParecido,
+  hayTrigramas,
+} from "../../lib/busqueda.js";
 
 // Las columnas id son SERIAL (int). Un id que no es número entero (p. ej.
 // /categoria/abc) haría fallar a PostgreSQL; lo tratamos como "no existe".
@@ -80,6 +90,41 @@ function errorSku(err, sku) {
 
 const productoPorId = async (id) => mapProducto(await one("SELECT * FROM producto WHERE id = $1", [id]));
 
+// Dónde se busca un producto: su nombre, descripción, SKU y el nombre de su
+// categoría (así "audífonos" también encuentra "Earbuds inalámbricos").
+const COLUMNAS_PRODUCTO = ["p.nombre", "p.descripcion", "p.sku", "c.nombre"];
+
+// Búsqueda de productos que usan la tienda y el panel (ver lib/busqueda.js).
+// Primero busca coincidencias exactas (sin acentos, palabras a medias, en
+// cualquier orden). Si no hay ninguna y hay pg_trgm, busca productos con
+// palabras parecidas y lo marca con aproximada: true.
+async function buscarEnCatalogo({ texto, categoriaId = null, incluirInactivos = false, limite = 200, offset = 0 }) {
+  const filtro = `FROM producto p JOIN categoria c ON c.id = p.categoria_id
+     WHERE ($1::int IS NULL OR p.categoria_id = $1) AND ($2::boolean OR p.activo)`;
+  const base = [categoriaId, Boolean(incluirInactivos)];
+  const pagina = [limite, offset];
+
+  const patrones = parametroBusqueda(texto);
+  const exacto = `${filtro} AND ${condicionBusqueda(COLUMNAS_PRODUCTO, 3)}`;
+  const { total } = await one(`SELECT COUNT(*)::int AS total ${exacto}`, [...base, patrones]);
+  if (total > 0 || !patrones || !(await hayTrigramas())) {
+    const filas = await many(
+      `SELECT p.* ${exacto} ORDER BY ${puntajeBusqueda("p.nombre", 3)} DESC, p.id LIMIT $4 OFFSET $5`,
+      [...base, patrones, ...pagina]
+    );
+    return { items: filas.map(mapProducto), total, aproximada: false };
+  }
+
+  const palabras = parametroParecido(texto);
+  const parecido = `${filtro} AND ${condicionParecida(COLUMNAS_PRODUCTO, 3)}`;
+  const { total: totalParecido } = await one(`SELECT COUNT(*)::int AS total ${parecido}`, [...base, palabras]);
+  const filas = await many(
+    `SELECT p.* ${parecido} ORDER BY ${puntajeParecido(COLUMNAS_PRODUCTO, 3)} DESC, p.id LIMIT $4 OFFSET $5`,
+    [...base, palabras, ...pagina]
+  );
+  return { items: filas.map(mapProducto), total: totalParecido, aproximada: totalParecido > 0 };
+}
+
 export const resolvers = {
   Query: {
     // Nota N+1: Categoria.productos hace una consulta por categoría.
@@ -90,22 +135,13 @@ export const resolvers = {
 
     productos: async (_padre, { limit, offset, categoriaId, incluirInactivos, buscar }, context) => {
       const catId = categoriaId != null && esIdValido(categoriaId) ? categoriaId : null;
-      const todos = Boolean(incluirInactivos) && veInactivos(context);
-      const texto = veInactivos(context) ? (buscar ?? "").trim() : "";
-      const patron = texto ? `%${texto.replace(/[\\%_]/g, "\\$&")}%` : null;
-      const filtro = `FROM producto
-         WHERE ($1::int IS NULL OR categoria_id = $1)
-           AND ($2::boolean OR activo)
-           AND ($3::text IS NULL OR nombre ILIKE $3 OR sku ILIKE $3)`;
-      const rows = await many(`SELECT * ${filtro} ORDER BY id LIMIT $4 OFFSET $5`, [
-        catId,
-        todos,
-        patron,
-        limit,
+      return buscarEnCatalogo({
+        texto: veInactivos(context) ? buscar : null,
+        categoriaId: catId,
+        incluirInactivos: Boolean(incluirInactivos) && veInactivos(context),
+        limite: limit,
         offset,
-      ]);
-      const { total } = await one(`SELECT COUNT(*)::int AS total ${filtro}`, [catId, todos, patron]);
-      return { items: rows.map(mapProducto), total };
+      });
     },
     producto: async (_padre, { id }, context) => {
       const producto = esIdValido(id) ? await productoPorId(id) : null;
@@ -113,22 +149,21 @@ export const resolvers = {
       return producto;
     },
 
-    // Búsqueda del TopBar (?q=). ILIKE ignora mayúsculas; los comodines que
-    // escriba el usuario (% y _) se escapan para buscarlos literalmente.
-    buscarProductos: async (_padre, { texto, categoriaId }) => {
-      const limpio = texto.trim();
-      if (!limpio) return [];
-      const patron = `%${limpio.replace(/[\\%_]/g, "\\$&")}%`;
+    // Búsqueda del TopBar (?q=), en toda la tienda o dentro de una categoría.
+    // Solo productos activos. Regresa también si los resultados son
+    // aproximados (palabras parecidas, no exactas).
+    buscar: async (_padre, { texto, categoriaId }) => {
+      if (palabrasDe(texto).length === 0) return { productos: [], total: 0, aproximada: false };
       const catId = categoriaId != null && esIdValido(categoriaId) ? categoriaId : null;
-      const rows = await many(
-        `SELECT * FROM producto
-         WHERE (nombre ILIKE $1 OR descripcion ILIKE $1)
-           AND ($2::int IS NULL OR categoria_id = $2)
-           AND activo
-         ORDER BY id`,
-        [patron, catId]
-      );
-      return rows.map(mapProducto);
+      const r = await buscarEnCatalogo({ texto, categoriaId: catId });
+      return { productos: r.items, total: r.total, aproximada: r.aproximada };
+    },
+
+    // La de antes, solo con la lista (se conserva por compatibilidad).
+    buscarProductos: async (_padre, { texto, categoriaId }) => {
+      if (palabrasDe(texto).length === 0) return [];
+      const catId = categoriaId != null && esIdValido(categoriaId) ? categoriaId : null;
+      return (await buscarEnCatalogo({ texto, categoriaId: catId })).items;
     },
   },
 

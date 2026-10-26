@@ -31,19 +31,25 @@ export const QUERY_CATEGORIA = `
   }
 `;
 
-// Búsqueda del TopBar. Sin categoriaId busca en toda la tienda.
+// Búsqueda del TopBar. Sin categoriaId busca en toda la tienda. El backend
+// ignora acentos y mayúsculas, acepta palabras a medias y, si no encuentra
+// nada exacto, regresa lo más parecido con aproximada: true.
 export const QUERY_BUSCAR = `
-  query BuscarProductos($texto: String!, $categoriaId: ID) {
-    buscarProductos(texto: $texto, categoriaId: $categoriaId) {
-      id
-      nombre
-      descripcion
-      precio
-      stock
-      imagen
-      categoria {
+  query Buscar($texto: String!, $categoriaId: ID) {
+    buscar(texto: $texto, categoriaId: $categoriaId) {
+      total
+      aproximada
+      productos {
         id
         nombre
+        descripcion
+        precio
+        stock
+        imagen
+        categoria {
+          id
+          nombre
+        }
       }
     }
   }

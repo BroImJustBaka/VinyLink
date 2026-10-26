@@ -1,7 +1,9 @@
 ---
 // Dueño: Persona A. Migrado de front/src/views/CategoryView.jsx.
 // Lista de productos de la categoría (numeración A1/B1), filtro ?q= del
-// TopBar y 404 si la categoría no existe. El detalle se abre en la isla
+// TopBar y 404 si la categoría no existe. El filtro lo hace el backend
+// (query buscar con categoriaId), igual que la búsqueda de toda la tienda:
+// sin acentos ni mayúsculas, con palabras a medias y tolerancia a errores. El detalle se abre en la isla
 // ProductModal, que agrega al carrito con useCartStore (B).
 import Layout from "../../layouts/Layout.astro";
 import Sidebar from "../../components/catalogo/Sidebar.astro";
@@ -9,7 +11,7 @@ import ProductGrid from "../../components/catalogo/ProductGrid.astro";
 import ProductModal from "../../components/catalogo/ProductModal.jsx";
 import ErrorBox from "../../components/catalogo/ErrorBox.astro";
 import { graphqlServer } from "../../lib/graphql";
-import { QUERY_CATEGORIA } from "../../lib/queries/catalogo.js";
+import { QUERY_CATEGORIA, QUERY_BUSCAR } from "../../lib/queries/catalogo.js";
 
 type Producto = {
   id: string;
@@ -25,21 +27,23 @@ const { id } = Astro.params;
 const q = (Astro.url.searchParams.get("q") ?? "").trim();
 
 let categoria: Categoria | null = null;
+let productos: Producto[] = [];
+let aproximada = false;
 let error: string | null = null;
 try {
   ({ categoria } = await graphqlServer(Astro.cookies, QUERY_CATEGORIA, { id }));
+  productos = categoria?.productos ?? [];
+  if (categoria && q) {
+    ({
+      buscar: { productos, aproximada },
+    } = await graphqlServer(Astro.cookies, QUERY_BUSCAR, { texto: q, categoriaId: categoria.id }));
+  }
 } catch (err) {
   error = (err as Error).message;
   Astro.response.status = 502;
 }
 
 if (!error && !categoria) return Astro.rewrite("/404");
-
-const texto = q.toLowerCase();
-const productos = (categoria?.productos ?? []).filter(
-  (p) =>
-    p.nombre.toLowerCase().includes(texto) || p.descripcion.toLowerCase().includes(texto)
-);
 ---
 
 <Layout title={categoria?.nombre ?? "Categoría"}>
@@ -64,6 +68,9 @@ const productos = (categoria?.productos ?? []).filter(
                 Buscar en toda la tienda
               </a>
             </p>
+          )}
+          {q && aproximada && (
+            <p class="aviso-info">No encontramos exactamente “{q}”. Estos son los más parecidos.</p>
           )}
 
           {productos.length === 0 ? (

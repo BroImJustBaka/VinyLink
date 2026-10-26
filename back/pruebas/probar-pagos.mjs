@@ -31,6 +31,9 @@ const postgres = new EmbeddedPostgres({
   port: PUERTO_PG,
   persistent: false, // al apagarlo borra la carpeta
   onLog: () => {},
+  // PostgreSQL 18 en Windows deja vivo un proceso "io_worker" al apagarse,
+  // que bloquea la carpeta temporal; con io_method=sync no se crean.
+  postgresFlags: ["-c", "io_method=sync"],
 });
 console.log("Levantando PostgreSQL temporal...");
 await postgres.initialise();
@@ -60,7 +63,7 @@ async function terminar(codigo) {
   const { pool } = await import("../src/db.js");
   await pool.end(); // conexiones del backend
   await db.end(); // conexión de las pruebas
-  await postgres.stop();
+  await postgres.stop().catch(() => {}); // si falla al borrar la carpeta, se borra abajo
   // En Windows embedded-postgres a veces no alcanza a borrarla: se borra aquí.
   await fs.rm(carpeta, { recursive: true, force: true, maxRetries: 10, retryDelay: 300 }).catch(() => {});
   process.exit(codigo);

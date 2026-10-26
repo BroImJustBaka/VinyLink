@@ -35,6 +35,19 @@ export const typeDefs = `#graphql
   type ProductoPagina {
     items: [Producto!]!
     total: Int!
+    "true si se buscó texto y no hubo coincidencias exactas: son productos con palabras parecidas."
+    aproximada: Boolean!
+  }
+
+  "Resultado de la búsqueda de la tienda."
+  type ResultadoBusqueda {
+    productos: [Producto!]!
+    total: Int!
+    """
+    true si no hubo coincidencias exactas y se muestran productos con
+    palabras parecidas (por ejemplo "audifnos" → Audífonos).
+    """
+    aproximada: Boolean!
   }
 
   "Datos para crear o actualizar un producto."
@@ -78,7 +91,13 @@ export const typeDefs = `#graphql
     productos(limit: Int = 20, offset: Int = 0, categoriaId: ID, incluirInactivos: Boolean = false, buscar: String): ProductoPagina!
     "Consulta un producto por su id (uno inactivo solo lo ve el personal)."
     producto(id: ID!): Producto
-    "Busca productos activos cuyo nombre o descripción contenga el texto (opcional: dentro de una categoría)."
+    """
+    Busca productos activos por nombre, descripción, SKU o categoría, sin
+    importar acentos ni mayúsculas, con palabras a medias y en cualquier
+    orden. Si no hay coincidencias exactas, regresa las más parecidas.
+    """
+    buscar(texto: String!, categoriaId: ID): ResultadoBusqueda!
+    "Igual que buscar, pero solo la lista de productos (versión anterior)."
     buscarProductos(texto: String!, categoriaId: ID): [Producto!]!
   }
 

@@ -19,7 +19,8 @@ real por **GraphQL subscriptions** (WebSocket).
 
 | Área | Qué hace |
 |---|---|
-| **Catálogo** | Home con categorías, página por categoría con numeración estilo vinilo (A1, A2… B1…), detalle de producto en un modal y búsqueda por nombre o descripción. |
+| **Catálogo** | Home con categorías, página por categoría con numeración estilo vinilo (A1, A2… B1…), detalle de producto en un modal y búsqueda por nombre, descripción, SKU o categoría. |
+| **Búsqueda** | Igual en la tienda y en el panel: sin acentos ni mayúsculas ("audifonos" = "Audífonos"), palabras a medias y varias palabras en cualquier orden. Si no hay coincidencias exactas, muestra los productos más parecidos ("audifnos" → Audífonos) con `pg_trgm`. Ver `back/src/lib/busqueda.js` y la función `normalizar()` de `db.sql`. |
 | **Carrito** | Funciona sin cuenta (se guarda en el navegador). Con sesión se sincroniza con la base de datos y, al iniciar sesión, el carrito de invitado se fusiona con el guardado. |
 | **Pedidos** | El pedido nace "pendiente" con el stock apartado y pasa a "pagado" cuando Stripe confirma el cobro. Página `/pedido/[id]` con la ficha OXXO, la CLABE o el link, que se actualiza sola; historial en `/perfil`. |
 | **Pagos** | Crédito (con meses sin intereses), débito, OXXO, SPEI y link de pago. El backend comprueba que la tarjeta sea del tipo elegido, cancela y devuelve el stock de los pagos rechazados o vencidos, y recibe los avisos de Stripe por webhook. |

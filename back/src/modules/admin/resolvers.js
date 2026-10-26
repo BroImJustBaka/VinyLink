@@ -9,6 +9,7 @@ import { ES_ID, registrarHistorial } from "../pedidos/servicio.js";
 import { crearLinkDePago, reembolsarPedido } from "../pagos/servicio.js";
 import { notificarPedido } from "../notificaciones/servicio.js";
 import { exportarCsv } from "./exportar.js";
+import { parametroBusqueda, condicionBusqueda } from "../../lib/busqueda.js";
 
 // Estados que cuentan como venta (el dinero ya entró).
 const VENTA = "('pagado', 'enviado', 'entregado')";
@@ -29,8 +30,6 @@ function validarDias(dias) {
 
 const limite = (n, defecto, max) => Math.min(Math.max(Number(n) || defecto, 1), max);
 const desplazamiento = (n) => Math.max(Number(n) || 0, 0);
-// Los comodines de ILIKE (% y _) que escriba el admin se buscan literalmente.
-const patronDe = (texto) => (texto ? `%${texto.replace(/[\\%_]/g, "\\$&")}%` : null);
 
 async function pedidoOError(id) {
   const pedido = ES_ID.test(String(id)) ? await one("SELECT * FROM pedido WHERE id = $1", [id]) : null;
@@ -208,8 +207,10 @@ export const resolvers = {
         FROM pedido p JOIN usuario u ON u.id = p.usuario_id
         WHERE ($1::text IS NULL OR p.estado = $1)
           AND ($2::text IS NULL OR p.metodo_pago = $2)
-          AND ($3::text IS NULL OR u.nombre ILIKE $3 OR u.email ILIKE $3 OR p.id::text = $4 OR p.numero_guia ILIKE $3)`;
-      const params = [est, met, patronDe(texto), texto];
+          AND (${condicionBusqueda(["u.nombre", "u.email", "p.numero_guia"], 3)} OR p.id::text = $4)`;
+      // Búsqueda normalizada (lib/busqueda.js): sin acentos, palabras a medias
+      // y en cualquier orden. "#12" o "12" también encuentra el pedido 12.
+      const params = [est, met, parametroBusqueda(texto), texto];
       const items = await many(
         `SELECT p.* ${filtro} ORDER BY p.fecha DESC, p.id DESC LIMIT $5 OFFSET $6`,
         [...params, limite(lim, 20, 100), desplazamiento(offset)]
@@ -221,10 +222,10 @@ export const resolvers = {
     adminClientes: async (_padre, { buscar, rol, bloqueados, limite: lim, offset }, context) => {
       requirePermiso(context, "clientes", "links", "usuarios");
       const filtro = `
-        WHERE ($1::text IS NULL OR u.nombre ILIKE $1 OR u.email ILIKE $1)
+        WHERE ${condicionBusqueda(["u.nombre", "u.email", "u.telefono"], 1)}
           AND ($2::text IS NULL OR u.rol = $2)
           AND (NOT $3::boolean OR NOT u.activo)`;
-      const params = [patronDe((buscar ?? "").trim()), ROLES.includes(rol) ? rol : null, Boolean(bloqueados)];
+      const params = [parametroBusqueda(buscar), ROLES.includes(rol) ? rol : null, Boolean(bloqueados)];
       const filas = await many(
         `SELECT u.id, u.nombre, u.email, u.rol, u.activo, u.telefono, u.creado_en,
                 COUNT(p.id) FILTER (WHERE p.estado IN ${VENTA})::int AS pedidos,
@@ -281,12 +282,12 @@ export const resolvers = {
         WHERE ($1::text IS NULL OR entidad = $1)
           AND ($2::text IS NULL OR entidad_id = $2)
           AND ($3::int IS NULL OR usuario_id = $3)
-          AND ($4::text IS NULL OR accion ILIKE $4 OR usuario_nombre ILIKE $4 OR detalle::text ILIKE $4)`;
+          AND ${condicionBusqueda(["accion", "usuario_nombre", "entidad_id", "detalle::text"], 4)}`;
       const params = [
         entidad?.trim() || null,
         entidadId?.trim() || null,
         usuarioId && ES_ID.test(String(usuarioId)) ? usuarioId : null,
-        patronDe((buscar ?? "").trim()),
+        parametroBusqueda(buscar),
       ];
       const filas = await many(
         `SELECT * ${filtro} ORDER BY creado_en DESC, id DESC LIMIT $5 OFFSET $6`,
