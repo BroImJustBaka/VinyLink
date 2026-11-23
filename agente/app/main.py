@@ -48,7 +48,9 @@ async def ciclo_de_vida(app: FastAPI):
     gemini = (
         genai.Client(
             api_key=cfg.gemini_api_key,
-            http_options=gtipos.HttpOptions(timeout=60_000, retry_options=gtipos.HttpRetryOptions(attempts=2)),
+            http_options=gtipos.HttpOptions(
+                api_version="v1beta", timeout=60_000, retry_options=gtipos.HttpRetryOptions(attempts=2)
+            ),
         )
         if cfg.gemini_api_key
         else None
@@ -131,7 +133,7 @@ async def salud(request: Request):
         mongo = False
     agente = request.app.state.agente
     cfg = config()
-    modelo = {"gemini": cfg.gemini_modelo, "claude": cfg.modelo}.get(agente.proveedor)
+    modelo = {"gemini": agente.modelo_gemini, "claude": cfg.modelo}.get(agente.proveedor)
     return {"ok": mongo, "mongo": mongo, "ia": agente.proveedor, "modo": agente.modo, "modelo": modelo}
 
 

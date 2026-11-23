@@ -72,3 +72,17 @@ def test_gemini_cuota_agotada_usa_el_modo_basico(cliente_gemini):
     simulado.status_gemini = 429
     r = cliente_gemini.post("/chat", json={"mensaje": "earbuds"})
     assert r.status_code == 200 and r.json()["modo"] == "basico"
+
+
+def test_gemini_modelo_inexistente_busca_el_flash_disponible(cliente_gemini):
+    simulado.modelos_validos = {"gemini-2.5-flash"}
+    simulado.gemini(gemini_texto("Hola, soy Vinny."), gemini_texto("Claro."))
+    r = cliente_gemini.post("/chat", json={"mensaje": "hola"})
+    assert r.status_code == 200, r.text
+    assert r.json()["respuesta"] == "Hola, soy Vinny."
+    assert "/v1beta/models/gemini-2.5-flash:generateContent" in simulado.peticiones_gemini[-1]["ruta"]
+    assert cliente_gemini.get("/salud").json()["modelo"] == "gemini-2.5-flash"
+    # El siguiente mensaje ya usa el modelo encontrado, sin volver a fallar.
+    antes = len(simulado.peticiones_gemini)
+    cliente_gemini.post("/chat", json={"mensaje": "otra"})
+    assert len(simulado.peticiones_gemini) == antes + 1

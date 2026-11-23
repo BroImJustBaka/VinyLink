@@ -106,6 +106,9 @@ DECLARACIONES_GEMINI = [
     for h in HERRAMIENTAS
 ]
 _BLOQUEOS_GEMINI = {"SAFETY", "PROHIBITED_CONTENT", "BLOCKLIST", "SPII", "RECITATION"}
+# Modelos Flash estables ("gemini-2.5-flash", "gemini-3-flash"...): los del plan gratuito.
+_FLASH_ESTABLE = re.compile(r"^gemini-(\d+(?:\.\d+)?)-flash$")
+_NO_CHAT = ("image", "tts", "audio", "live", "embedding", "thinking")
 
 MENSAJE_RECHAZO = "Perdón, no puedo ayudarte con eso. ¿Te ayudo a encontrar algún disco, audífono o instrumento?"
 
@@ -166,6 +169,8 @@ class Agente:
         self.tienda = tienda
         self.cliente = cliente
         self.gemini = gemini
+        self.modelo_gemini = config().gemini_modelo
+        self._modelo_gemini_resuelto = False
         self._pausa_hasta = 0.0
 
     # ------------------------------------------------------------ herramientas
@@ -270,11 +275,46 @@ class Agente:
         return texto_respuesta, productos, nuevos, False
 
     # ------------------------------------------------------------ Gemini
+    async def _resolver_modelo_gemini(self) -> str | None:
+        """Elige el Flash estable más nuevo que la llave puede usar (los nombres
+        de Google cambian con el tiempo; así el agente no depende de uno fijo)."""
+        estables, otros = [], []
+        async for m in await self.gemini.aio.models.list(config={"page_size": 200}):
+            nombre = (m.name or "").removeprefix("models/")
+            if "generateContent" not in (m.supported_actions or []):
+                continue
+            if v := _FLASH_ESTABLE.match(nombre):
+                estables.append((float(v.group(1)), nombre))
+            elif "flash" in nombre and not any(x in nombre for x in _NO_CHAT):
+                otros.append(nombre)
+        if estables:
+            return max(estables)[1]
+        return sorted(otros)[-1] if otros else None
+
     async def _llamar_gemini(self, contenidos: list[gtipos.Content], con_herramientas: bool):
-        cfg = config()
+        try:
+            return await self._generar_gemini(contenidos, con_herramientas)
+        except gerrores.ClientError as err:
+            if err.code != 404 or self._modelo_gemini_resuelto:
+                log.error("Petición inválida a Gemini: %s", err)
+                raise ErrorAgente("El asistente no pudo procesar el mensaje. Empieza una conversación nueva.", 400) from err
+            # El modelo configurado no existe para esta llave: se busca uno disponible una vez.
+            self._modelo_gemini_resuelto = True
+            try:
+                nuevo = await self._resolver_modelo_gemini()
+            except (gerrores.APIError, httpx.HTTPError):
+                nuevo = None
+            if not nuevo or nuevo == self.modelo_gemini:
+                log.error("Gemini no tiene un modelo Flash disponible para esta llave: %s", err)
+                raise ErrorAgente("El asistente no está disponible en este momento.", 503) from err
+            log.warning("El modelo %s no existe; se usa %s.", self.modelo_gemini, nuevo)
+            self.modelo_gemini = nuevo
+            return await self._generar_gemini(contenidos, con_herramientas)
+
+    async def _generar_gemini(self, contenidos: list[gtipos.Content], con_herramientas: bool):
         try:
             return await self.gemini.aio.models.generate_content(
-                model=cfg.gemini_modelo,
+                model=self.modelo_gemini,
                 contents=contenidos,
                 config=gtipos.GenerateContentConfig(
                     system_instruction=SISTEMA,
@@ -295,6 +335,8 @@ class Agente:
             if err.code == 429:
                 log.warning("Se agotó la cuota gratuita de Gemini por ahora: se usa el modo básico.")
                 raise _SinIA(pausa=False) from err
+            if err.code == 404 and not self._modelo_gemini_resuelto:
+                raise
             log.error("Petición inválida a Gemini: %s", err)
             raise ErrorAgente("El asistente no pudo procesar el mensaje. Empieza una conversación nueva.", 400) from err
         except (gerrores.APIError, httpx.HTTPError) as err:

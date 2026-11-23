@@ -34,6 +34,7 @@ class Simulado:
         self.respuestas_gemini = []
         self.peticiones_gemini = []
         self.status_gemini = 200
+        self.modelos_validos = None  # None = cualquier modelo existe
         self.peticiones_tienda = []
         self.status_claude = 200
         self.error_claude = None
@@ -110,6 +111,13 @@ class Manejador(BaseHTTPRequestHandler):
     def log_message(self, *args):
         pass
 
+    def do_GET(self):
+        if "/models" in self.path:  # ListModels de Gemini
+            nombres = ["gemini-2.0-flash", "gemini-2.5-flash", "gemini-2.5-flash-image", "gemini-2.5-pro", "text-embedding-004"]
+            modelos = [{"name": f"models/{n}", "supportedGenerationMethods": ["embedContent"] if "embedding" in n else ["generateContent"]} for n in nombres]
+            return self._json(200, {"models": modelos})
+        self._json(404, {})
+
     def _json(self, status, cuerpo):
         datos = json.dumps(cuerpo).encode()
         self.send_response(status)
@@ -129,6 +137,9 @@ class Manejador(BaseHTTPRequestHandler):
             return self._json(200, simulado.respuestas_claude.pop(0))
         if ":generateContent" in self.path:
             simulado.peticiones_gemini.append({"ruta": self.path, "llave": self.headers.get("x-goog-api-key"), **cuerpo})
+            modelo = self.path.split("/models/")[1].split(":")[0]
+            if simulado.modelos_validos is not None and modelo not in simulado.modelos_validos:
+                return self._json(404, {"error": {"code": 404, "message": f"models/{modelo} is not found", "status": "NOT_FOUND"}})
             if simulado.status_gemini != 200:
                 return self._json(simulado.status_gemini, {"error": {"code": simulado.status_gemini, "message": "API key not valid. Please pass a valid API key." if simulado.status_gemini < 429 else "Resource has been exhausted (e.g. check quota).", "status": "INVALID_ARGUMENT" if simulado.status_gemini < 429 else "RESOURCE_EXHAUSTED"}})
             if not simulado.respuestas_gemini:
