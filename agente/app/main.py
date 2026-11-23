@@ -50,7 +50,7 @@ async def ciclo_de_vida(app: FastAPI):
         genai.Client(
             api_key=cfg.gemini_api_key,
             http_options=gtipos.HttpOptions(
-                api_version="v1beta", timeout=60_000, retry_options=gtipos.HttpRetryOptions(attempts=2)
+                api_version="v1beta", timeout=25_000, retry_options=gtipos.HttpRetryOptions(attempts=2)
             ),
         )
         if cfg.gemini_api_key

@@ -23,6 +23,7 @@ rompe y no se genera ningún cobro.
 import asyncio
 import json
 import logging
+import asyncio
 import re
 import time
 import unicodedata
@@ -453,7 +454,12 @@ class Agente:
         if modo == "ia":
             responder_con = self._con_gemini if proveedor == "gemini" else self._con_claude
             try:
-                texto_respuesta, productos, nuevos, rechazado = await responder_con(historial, texto, token)
+                texto_respuesta, productos, nuevos, rechazado = await asyncio.wait_for(
+                    responder_con(historial, texto, token), timeout=cfg.limite_ia_s
+                )
+            except TimeoutError:
+                log.warning("La IA tardó más de %s s: se usa el modo básico.", cfg.limite_ia_s)
+                modo = "basico"
             except _SinIA as err:
                 if err.pausa:
                     # Sin saldo o sin permiso: no se vuelve a intentar Claude en un rato.

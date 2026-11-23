@@ -19,6 +19,9 @@ class Configuracion(BaseSettings):
     # Respuestas cortas de chat: esfuerzo bajo (más rápido y barato).
     esfuerzo: str = "low"
     max_vueltas_herramientas: int = 6
+    # Tiempo máximo para que la IA conteste; después se responde en modo básico
+    # (la tienda corta la petición a los 90 s).
+    limite_ia_s: float = 40
     max_turnos_conversacion: int = 30
 
     # --- MongoDB (conversaciones del asistente y reseñas) ---

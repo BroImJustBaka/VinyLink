@@ -86,3 +86,13 @@ def test_gemini_modelo_inexistente_busca_el_flash_disponible(cliente_gemini):
     antes = len(simulado.peticiones_gemini)
     cliente_gemini.post("/chat", json={"mensaje": "otra"})
     assert len(simulado.peticiones_gemini) == antes + 1
+
+
+def test_gemini_lento_usa_el_modo_basico(cliente_gemini, monkeypatch):
+    from app.config import config
+    monkeypatch.setattr(config(), "limite_ia_s", 0.5)
+    simulado.demora_gemini = 2
+    simulado.gemini(gemini_texto("tarde"))
+    r = cliente_gemini.post("/chat", json={"mensaje": "earbuds"})
+    assert r.status_code == 200 and r.json()["modo"] == "basico"
+    assert "Earbuds" in r.json()["respuesta"]
