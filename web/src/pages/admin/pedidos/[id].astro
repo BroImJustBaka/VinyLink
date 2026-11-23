@@ -7,7 +7,7 @@
 // más cambia el pedido mientras está abierto (subscription pedidoActualizado).
 import Layout from "../../../layouts/Layout.astro";
 import AdminNav from "../../../components/admin/AdminNav.astro";
-import PedidoEnVivo from "../../../components/pagos/PedidoEnVivo.jsx";
+import PedidoEnVivo from "../../../components/pagos/PedidoEnVivo.tsx";
 import { graphqlServer } from "../../../lib/graphql";
 import {
   QUERY_ADMIN_PEDIDO,
@@ -15,11 +15,11 @@ import {
   MUTATION_ACTUALIZAR_GUIA,
   MUTATION_REEMBOLSAR,
   MUTATION_NOTA_PEDIDO,
-} from "../../../lib/queries/admin.js";
+} from "../../../lib/queries/admin.ts";
 import {
   MUTATION_CANCELAR_PEDIDO,
   MUTATION_SINCRONIZAR_PAGO,
-} from "../../../lib/queries/pagos.js";
+} from "../../../lib/queries/pagos.ts";
 import {
   dinero,
   fechaHora,
@@ -29,8 +29,8 @@ import {
   ESTADOS_PAGO,
   METODOS_PAGO,
   MARCAS_TARJETA,
-} from "../../../lib/formato.js";
-import { puede } from "../../../lib/permisos.js";
+} from "../../../lib/formato.ts";
+import { puede } from "../../../lib/permisos.ts";
 
 const { id } = Astro.params;
 const user = Astro.locals.user;
@@ -41,9 +41,9 @@ const AVISOS: Record<string, string> = {
   entregado: "Pedido marcado como entregado.",
   guia: "Guía actualizada.",
   cancelar: "Pedido cancelado; el stock regresó al inventario.",
-  reembolsar: "Reembolso hecho en Stripe.",
-  parcial: "Reembolso parcial hecho en Stripe.",
-  sincronizar: "Estado revisado con Stripe.",
+  reembolsar: "Reembolso hecho con el proveedor de pago.",
+  parcial: "Reembolso parcial hecho con el proveedor de pago.",
+  sincronizar: "Estado del cobro revisado con el proveedor de pago.",
   nota: "Nota agregada.",
 };
 
@@ -115,6 +115,10 @@ if (!error && !pedido) return Astro.rewrite("/404");
 const pago = pedido?.pago;
 const pagado = ["pagado", "enviado", "entregado"].includes(pedido?.estado);
 const conTarjeta = Boolean(pago?.tarjeta);
+const esPaypal = pago?.metodo === "paypal";
+const proveedor = esPaypal ? "PayPal" : "Stripe";
+// Se reembolsa desde aquí lo cobrado con tarjeta (Stripe) o con PayPal.
+const reembolsable = conTarjeta || (esPaypal && Boolean(pago?.paypalCaptureId));
 const restante = pedido ? Math.round((pedido.total - pedido.montoReembolsado) * 100) / 100 : 0;
 const acciones = {
   enviar: pedido?.estado === "pagado" && puede(user, "pedidos.envio"),
@@ -124,7 +128,7 @@ const acciones = {
     pedido?.estado === "pendiente" &&
     !(pago?.oxxo && pago.estado === "requiere_accion") &&
     puede(user, "pedidos.cancelar"),
-  reembolsar: pagado && pago?.estado === "pagado" && conTarjeta && restante > 0 && puede(user, "reembolsos"),
+  reembolsar: pagado && pago?.estado === "pagado" && reembolsable && restante > 0 && puede(user, "reembolsos"),
   sincronizar: Boolean(pago),
   nota: puede(user, "pedidos.notas"),
 };
@@ -261,9 +265,9 @@ const nombreEstado = (e: string | null) => (e ? ESTADOS_PEDIDO[e as keyof typeof
           </div>
 
           <div class="panel-card">
-            <h3>Pago en Stripe</h3>
+            <h3>{pago ? `Pago en ${proveedor}` : "Pago"}</h3>
             {!pago ? (
-              <p class="muted">Este pedido es anterior a los pagos en línea; no tiene cobro en Stripe.</p>
+              <p class="muted">Este pedido es anterior a los pagos en línea; no tiene cobro registrado.</p>
             ) : (
               <dl class="datos">
                 <dt>Estado del cobro</dt>
@@ -317,6 +321,24 @@ const nombreEstado = (e: string | null) => (e ? ESTADOS_PEDIDO[e as keyof typeof
                     </dd>
                   </>
                 )}
+                {pago.paypal && (
+                  <>
+                    <dt>Orden de PayPal</dt>
+                    <dd class="pago-datos__numero">{pago.paypal.ordenId}</dd>
+                    {pago.paypal.correoPagador && (
+                      <>
+                        <dt>Cuenta que pagó</dt>
+                        <dd>{pago.paypal.correoPagador}</dd>
+                      </>
+                    )}
+                    {pago.paypalCaptureId && (
+                      <>
+                        <dt>Captura</dt>
+                        <dd class="pago-datos__numero">{pago.paypalCaptureId}</dd>
+                      </>
+                    )}
+                  </>
+                )}
                 {pago.stripePaymentIntentId && (
                   <>
                     <dt>Cobro en Stripe</dt>
@@ -362,7 +384,7 @@ const nombreEstado = (e: string | null) => (e ? ESTADOS_PEDIDO[e as keyof typeof
               {acciones.sincronizar && (
                 <form method="post" action={accionUrl}>
                   <input type="hidden" name="accion" value="sincronizar" />
-                  <button class="btn" type="submit">Revisar con Stripe</button>
+                  <button class="btn" type="submit">Revisar con {proveedor}</button>
                 </form>
               )}
               {acciones.cancelar && (
@@ -407,7 +429,7 @@ const nombreEstado = (e: string | null) => (e ? ESTADOS_PEDIDO[e as keyof typeof
                   method="post"
                   action={accionUrl}
                   class="acciones-admin__reembolso"
-                  onsubmit="return confirm('¿Hacer el reembolso en Stripe? No se puede deshacer.')"
+                  onsubmit="return confirm('¿Hacer el reembolso? No se puede deshacer.')"
                 >
                   <input type="hidden" name="accion" value="reembolsar" />
                   <fieldset class="opciones-linea">
@@ -433,7 +455,7 @@ const nombreEstado = (e: string | null) => (e ? ESTADOS_PEDIDO[e as keyof typeof
               </details>
             )}
 
-            {pagado && pago && !conTarjeta && (
+            {pagado && pago && !reembolsable && (
               <p class="muted acciones-admin__nota">
                 Los pagos en OXXO o SPEI no se pueden reembolsar desde aquí: Stripe no lo permite para OXXO, y
                 SPEI necesita la cuenta bancaria del cliente (se hace desde el Dashboard de Stripe).

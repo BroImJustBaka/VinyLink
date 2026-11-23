@@ -1,0 +1,25 @@
+{
+  "id": "/",
+  "name": "VinyLink — Tienda de discos",
+  "short_name": "VinyLink",
+  "description": "Discos de vinilo, audífonos e instrumentos musicales. Compra con tarjeta, OXXO, SPEI o PayPal y pregúntale a Vinny, el asistente con IA.",
+  "lang": "es-MX",
+  "dir": "ltr",
+  "start_url": "/?origen=app",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#f3ebdd",
+  "theme_color": "#242321",
+  "categories": ["shopping", "music"],
+  "icons": [
+    { "src": "/iconos/icono-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/iconos/icono-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/iconos/icono-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" },
+    { "src": "/favicon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ],
+  "shortcuts": [
+    { "name": "Mi carrito", "url": "/carrito", "icons": [{ "src": "/iconos/icono-192.png", "sizes": "192x192" }] },
+    { "name": "Mis pedidos", "url": "/perfil", "icons": [{ "src": "/iconos/icono-192.png", "sizes": "192x192" }] }
+  ]
+}

@@ -1,0 +1,104 @@
+# Blueprint de Render: despliega los tres servicios de VinyLink de una vez.
+#   Render → New → Blueprint → elige este repositorio y la rama.
+#
+#   vinylink-7f          web (Astro SSR + PWA)          → https://vinylink-7f.onrender.com
+#   vinylink-7f-api      backend GraphQL (Node + Neon)  → https://vinylink-7f-api.onrender.com
+#   vinylink-7f-agente   asistente IA y reseñas (Python + MongoDB Atlas)
+#
+# Las variables con "sync: false" son secretos: Render las pide al crear el
+# Blueprint y nunca se guardan en el repositorio. Si Render asigna otra URL
+# (porque el nombre ya estaba ocupado), corrige WEB_URL, GRAPHQL_URL,
+# PUBLIC_GRAPHQL_WS_URL, AGENTE_URL y BACKEND_GRAPHQL_URL.
+#
+# Nota: el plan gratis duerme el servicio tras 15 min sin visitas; la primera
+# visita después tarda ~1 min en despertar. Para medir con Lighthouse, abre la
+# tienda una vez antes.
+
+services:
+  - type: web
+    name: vinylink-7f
+    runtime: node
+    plan: free
+    region: ohio
+    rootDir: web
+    buildCommand: npm ci && npm run build
+    startCommand: npm start
+    healthCheckPath: /robots.txt
+    envVars:
+      - key: NODE_VERSION
+        value: "24"
+      # Astro mete estas variables al compilar: deben existir antes del build.
+      - key: GRAPHQL_URL
+        value: https://vinylink-7f-api.onrender.com/
+      - key: PUBLIC_GRAPHQL_WS_URL
+        value: wss://vinylink-7f-api.onrender.com/graphql
+      - key: AGENTE_URL
+        value: https://vinylink-7f-agente.onrender.com/
+      - key: AGENTE_CLAVE_INTERNA
+        fromService:
+          type: web
+          name: vinylink-7f-agente
+          envVarKey: AGENTE_CLAVE_INTERNA
+
+  - type: web
+    name: vinylink-7f-api
+    runtime: node
+    plan: free
+    region: ohio
+    rootDir: back
+    buildCommand: npm ci
+    startCommand: npm start
+    envVars:
+      - key: NODE_VERSION
+        value: "24"
+      - key: WEB_URL
+        value: https://vinylink-7f.onrender.com
+      - key: AGENTE_URL
+        value: https://vinylink-7f-agente.onrender.com
+      - key: DATABASE_URL # Neon → Connection string (con ?sslmode=require)
+        sync: false
+      - key: STRIPE_SECRET_KEY # sk_test_...
+        sync: false
+      - key: STRIPE_PUBLISHABLE_KEY # pk_test_...
+        sync: false
+      - key: STRIPE_WEBHOOK_SECRET # whsec_... del webhook a /webhooks/stripe
+        sync: false
+      - key: PAYPAL_CLIENT_ID
+        sync: false
+      - key: PAYPAL_CLIENT_SECRET
+        sync: false
+      - key: PAYPAL_API_URL
+        value: https://api-m.sandbox.paypal.com
+      - key: MELI_CLIENT_ID
+        sync: false
+      - key: MELI_CLIENT_SECRET
+        sync: false
+      - key: BANXICO_TOKEN
+        sync: false
+      # "pruebas" es el token gratuito de COPOMEX (datos ficticios); cámbialo por uno real si lo tienes.
+      - key: COPOMEX_TOKEN
+        value: pruebas
+
+  - type: web
+    name: vinylink-7f-agente
+    runtime: python
+    plan: free
+    region: ohio
+    rootDir: agente
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /salud
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.13.5
+      - key: BACKEND_GRAPHQL_URL
+        value: https://vinylink-7f-api.onrender.com/
+      - key: MONGODB_DB
+        value: vinylink
+      # Clave compartida con la web (la genera Render; la web la lee de aquí).
+      - key: AGENTE_CLAVE_INTERNA
+        generateValue: true
+      - key: GEMINI_API_KEY # aistudio.google.com → Get API key (plan gratuito)
+        sync: false
+      - key: MONGODB_URI # MongoDB Atlas → Connect → Drivers
+        sync: false

@@ -3,7 +3,7 @@
 import Layout from "../layouts/Layout.astro";
 import AuthForm from "../components/auth/AuthForm.astro";
 import { graphqlServer } from "../lib/graphql";
-import { MUTATION_REGISTRAR } from "../lib/queries/auth.js";
+import { MUTATION_REGISTRAR } from "../lib/queries/auth.ts";
 import { guardarSesion, destinoSeguro } from "../components/auth/session";
 
 const next = destinoSeguro(Astro.url.searchParams.get("next"), "");

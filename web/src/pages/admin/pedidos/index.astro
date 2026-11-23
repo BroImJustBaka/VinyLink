@@ -5,9 +5,9 @@
 import Layout from "../../../layouts/Layout.astro";
 import AdminNav from "../../../components/admin/AdminNav.astro";
 import { graphqlServer } from "../../../lib/graphql";
-import { QUERY_ADMIN_PEDIDOS } from "../../../lib/queries/admin.js";
-import { dinero, fechaHora, ESTADOS_PEDIDO, METODOS_PAGO } from "../../../lib/formato.js";
-import { puede } from "../../../lib/permisos.js";
+import { QUERY_ADMIN_PEDIDOS } from "../../../lib/queries/admin.ts";
+import { dinero, fechaHora, ESTADOS_PEDIDO, METODOS_PAGO } from "../../../lib/formato.ts";
+import { puede } from "../../../lib/permisos.ts";
 
 const POR_PAGINA = 20;
 const params = Astro.url.searchParams;

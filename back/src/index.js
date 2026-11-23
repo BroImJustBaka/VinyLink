@@ -19,6 +19,7 @@ import { typeDefs, resolvers } from "./schema.js";
 import { initDb } from "./db.js";
 import { getUserFromRequest, getTokenFromRequest } from "./modules/auth/context.js";
 import { revisarConfiguracion } from "./modules/pagos/stripe.js";
+import { revisarConfiguracionPaypal } from "./modules/pagos/paypal.js";
 import { manejarWebhookStripe } from "./modules/pagos/webhook.js";
 import { iniciarRevisionDeVencimientos } from "./modules/pagos/vencimientos.js";
 import { servirImagen } from "./modules/catalogo/imagenes.js";
@@ -26,6 +27,7 @@ import { canjearTicket } from "./modules/tiempo-real/tickets.js";
 
 await initDb(); // crea tablas + siembra datos en PostgreSQL antes de levantar el servidor
 revisarConfiguracion();
+revisarConfiguracionPaypal();
 
 const app = express();
 const httpServer = http.createServer(app);

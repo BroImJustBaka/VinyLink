@@ -1,0 +1,110 @@
+/* Panel: comparador de precios con Mercado Libre y estado de las integraciones. */
+.comparador__form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+.comparador__form label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1 1 260px;
+  font-size: 0.9rem;
+}
+.comparador__form input {
+  padding: 8px 10px;
+  border: 1px solid var(--carbon-a20);
+  border-radius: 6px;
+  font: inherit;
+  background: var(--paper);
+}
+.comparador__resumen {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 10px;
+  margin: 0 0 10px;
+}
+.comparador__resumen div {
+  background: var(--cream);
+  border-radius: 8px;
+  padding: 10px 12px;
+}
+.comparador__resumen dt {
+  font-size: 0.8rem;
+  color: var(--wood);
+}
+.comparador__resumen dd {
+  margin: 2px 0 0;
+  font-weight: 600;
+  font-size: 1.05rem;
+}
+.comparador__veredicto {
+  display: inline-block;
+  margin: 0 0 8px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-weight: 600;
+  font-size: 0.88rem;
+}
+.comparador__veredicto--igual {
+  background: #eef0e7;
+  color: var(--olive);
+}
+.comparador__veredicto--caro {
+  background: #f3e6e0;
+  color: #8a4229;
+}
+.comparador__veredicto--barato {
+  background: #f6efd9;
+  color: #5c4a1c;
+}
+.comparador__lista {
+  list-style: none;
+  margin: 10px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 0.9rem;
+}
+.comparador__lista li {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  gap: 10px;
+  align-items: baseline;
+  border-bottom: 1px solid var(--carbon-a10);
+  padding-bottom: 6px;
+}
+
+.integraciones {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.integraciones li {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+}
+.estado-integracion {
+  flex-shrink: 0;
+  min-width: 110px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 999px;
+  text-align: center;
+}
+.estado-integracion--si {
+  background: #eef0e7;
+  color: var(--olive);
+}
+.estado-integracion--no {
+  background: var(--carbon-a10);
+  color: var(--carbon);
+}

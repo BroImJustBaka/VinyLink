@@ -10,7 +10,15 @@ export default defineConfig({
   output: 'server',
   integrations: [react()],
 
+  // Modo middleware: server.mjs monta el SSR en Express con compresión y
+  // caché de archivos estáticos (ver ese archivo).
   adapter: node({
-    mode: 'standalone'
-  })
+    mode: 'middleware'
+  }),
+
+  build: {
+    // El CSS va dentro del HTML: sin hoja de estilos que bloquee el primer
+    // pintado (mejora el LCP en móvil). Comprimido pesa ~7 KB.
+    inlineStylesheets: 'always'
+  }
 });

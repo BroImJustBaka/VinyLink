@@ -5,6 +5,7 @@ import { requireUser } from "../auth/context.js";
 import { tienePermiso } from "../auth/permisos.js";
 import { ES_ID } from "../pedidos/servicio.js";
 import { stripe, publishableKey, modoPrueba } from "./stripe.js";
+import { paypalHabilitado } from "./paypal.js";
 import { registrar } from "../../lib/bitacora.js";
 import {
   cobrar,
@@ -49,8 +50,10 @@ export function mapPago(row, esAdmin = false) {
         }
       : null,
     link: d.link ?? null,
+    paypal: d.paypal ?? null,
     stripePaymentIntentId: esAdmin ? row.stripe_payment_intent_id : null,
     stripeCheckoutSessionId: esAdmin ? row.stripe_checkout_session_id : null,
+    paypalCaptureId: esAdmin ? row.paypal_capture_id : null,
     creadoEn: iso(row.creado_en),
   };
 }
@@ -63,6 +66,7 @@ export const resolvers = {
       modoPrueba,
       minimo: MINIMO_CENTAVOS / 100,
       maximoOxxo: MAXIMO_OXXO_CENTAVOS / 100,
+      paypalHabilitado,
     }),
   },
 
@@ -90,6 +94,7 @@ export const resolvers = {
         pedido: await pedidoPorId(r.pedidoId),
         requiereAccion: r.requiereAccion,
         clientSecret: r.clientSecret,
+        urlAprobacion: r.urlAprobacion ?? null,
       };
     },
 

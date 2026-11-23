@@ -4,8 +4,8 @@
 // `Astro.locals.user` = { id, nombre, email, rol } | null.
 import { defineMiddleware } from "astro:middleware";
 import { SESSION_COOKIE, graphqlServer } from "./lib/graphql";
-import { QUERY_ME } from "./lib/queries/auth.js";
-import { esPersonal, puede, seccionDe, seccionesDe } from "./lib/permisos.js";
+import { QUERY_ME } from "./lib/queries/auth.ts";
+import { esPersonal, puede, seccionDe, seccionesDe } from "./lib/permisos.ts";
 
 // Rutas que exigen sesión (incluye subrutas: /checkout/algo).
 const PROTEGIDAS = ["/perfil", "/checkout", "/pedido", "/admin"];
@@ -18,8 +18,9 @@ const coincide = (pathname: string, rutas: string[]) =>
 export const onRequest = defineMiddleware(async (context, next) => {
   context.locals.user = null;
 
-  // El proxy de las islas solo reenvía la cookie; no necesita `me` (ahorra un viaje al backend).
-  if (context.url.pathname.startsWith("/api/")) return next();
+  // El proxy de las islas solo reenvía la cookie y /img solo sirve imágenes:
+  // no necesitan `me` (ahorra un viaje al backend por petición).
+  if (context.url.pathname.startsWith("/api/") || context.url.pathname === "/img") return next();
 
   if (context.cookies.has(SESSION_COOKIE)) {
     try {

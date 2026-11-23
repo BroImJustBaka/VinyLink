@@ -17,7 +17,7 @@ const VENTA = "('pagado', 'enviado', 'entregado')";
 const CUANDO = "COALESCE(p.pagado_en, p.fecha)";
 
 const ESTADOS = ["pendiente", "pagado", "enviado", "entregado", "cancelado", "reembolsado"];
-const METODOS = ["credito", "debito", "oxxo", "spei", "link"];
+const METODOS = ["credito", "debito", "oxxo", "spei", "link", "paypal"];
 // Avances permitidos desde el panel (cancelar y reembolsar tienen su propia mutación).
 const SIGUIENTE = { pagado: "enviado", enviado: "entregado" };
 

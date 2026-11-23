@@ -7,9 +7,9 @@ import Hero from "../components/catalogo/Hero.astro";
 import CategoryCard from "../components/catalogo/CategoryCard.astro";
 import Sidebar from "../components/catalogo/Sidebar.astro";
 import ErrorBox from "../components/catalogo/ErrorBox.astro";
-import ContextSection from "../components/catalogo/ContextSection.jsx";
+import ContextSection from "../components/catalogo/ContextSection.tsx";
 import { graphqlServer } from "../lib/graphql";
-import { QUERY_CATEGORIAS } from "../lib/queries/catalogo.js";
+import { QUERY_CATEGORIAS } from "../lib/queries/catalogo.ts";
 
 type Categoria = { id: string; nombre: string; descripcion: string; imagen: string };
 

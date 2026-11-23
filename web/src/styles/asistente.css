@@ -1,0 +1,216 @@
+/* Asistente con IA (isla AsistenteChat). */
+.asistente__boton {
+  position: fixed;
+  right: 20px;
+  bottom: 20px;
+  z-index: 90;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 48px;
+  padding: 12px 18px;
+  border-radius: 999px;
+  border: none;
+  background: var(--carbon);
+  color: var(--paper);
+  font-weight: 600;
+  box-shadow: 0 12px 28px -12px var(--carbon-a45);
+}
+.asistente__boton:hover {
+  background: #3a3835;
+}
+.asistente__boton:focus-visible {
+  outline: 3px solid var(--mustard);
+  outline-offset: 2px;
+}
+
+.asistente {
+  position: fixed;
+  right: 20px;
+  bottom: 80px;
+  z-index: 95;
+  width: min(380px, calc(100vw - 32px));
+  height: min(560px, calc(100dvh - 110px));
+  display: flex;
+  flex-direction: column;
+  background: var(--paper);
+  border: 1px solid var(--carbon-a10);
+  border-radius: 12px;
+  box-shadow: 0 24px 48px -20px var(--carbon-a45);
+  overflow: hidden;
+  animation: asistente-entrada 0.18s ease-out;
+}
+@keyframes asistente-entrada {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+}
+.asistente__cabecera {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  background: var(--olive);
+  color: var(--paper);
+}
+.asistente__cabecera h2 {
+  margin: 0;
+  font-size: 1.25rem;
+  color: var(--paper);
+}
+.asistente__cabecera p {
+  margin: 0;
+  font-size: 0.8rem;
+}
+.asistente__cabecera .btn--link,
+.asistente__cabecera .btn--link:hover:not(:disabled) {
+  color: var(--paper);
+  font-size: 0.82rem;
+}
+.asistente__mensajes {
+  flex: 1;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.asistente__mensaje {
+  max-width: 88%;
+  padding: 9px 12px;
+  border-radius: 12px;
+  font-size: 0.92rem;
+  line-height: 1.45;
+}
+.asistente__mensaje p,
+.asistente__mensaje ul {
+  margin: 0;
+}
+.asistente__mensaje p + p,
+.asistente__mensaje p + ul,
+.asistente__mensaje ul + p {
+  margin-top: 6px;
+}
+.asistente__mensaje ul {
+  padding-left: 18px;
+}
+.asistente__mensaje--asistente {
+  align-self: flex-start;
+  background: var(--cream);
+  border-bottom-left-radius: 4px;
+}
+.asistente__mensaje--cliente {
+  align-self: flex-end;
+  background: var(--carbon);
+  color: var(--paper);
+  border-bottom-right-radius: 4px;
+  white-space: pre-wrap;
+}
+.asistente__productos {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.asistente__producto {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--paper);
+  border: 1px solid var(--carbon-a10);
+  border-radius: 8px;
+  padding: 6px;
+}
+.asistente__producto img {
+  width: 48px;
+  height: 48px;
+  object-fit: cover;
+  border-radius: 6px;
+  flex-shrink: 0;
+}
+.asistente__producto-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  font-size: 0.82rem;
+}
+.asistente__producto-info strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.asistente__sugerencias {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+}
+.asistente__sugerencias .btn {
+  text-align: left;
+  background: var(--paper);
+}
+.asistente__pensando {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--wood);
+  font-style: italic;
+}
+.asistente__error {
+  margin: 0;
+  padding: 8px 14px;
+  background: #f3e6e0;
+  color: #8a4229;
+  font-size: 0.85rem;
+}
+.asistente__form {
+  display: flex;
+  gap: 8px;
+  padding: 10px;
+  border-top: 1px solid var(--carbon-a10);
+}
+.asistente__form textarea {
+  flex: 1;
+  resize: none;
+  padding: 9px 10px;
+  border: 1px solid var(--carbon-a20);
+  border-radius: 8px;
+  background: var(--cream);
+  font: inherit;
+  font-size: 0.92rem;
+  max-height: 96px;
+}
+.asistente__aviso {
+  margin: 0;
+  padding: 0 12px 8px;
+  font-size: 0.72rem;
+  color: var(--wood);
+}
+@media (max-width: 520px) {
+  .asistente__boton {
+    right: 16px;
+    bottom: 16px;
+  }
+  .asistente__boton-texto {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+  }
+  .asistente {
+    right: 16px;
+    bottom: 76px;
+    height: calc(100dvh - 100px);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .asistente {
+    animation: none;
+  }
+}

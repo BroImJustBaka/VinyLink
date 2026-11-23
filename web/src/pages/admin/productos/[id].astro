@@ -10,15 +10,16 @@
 // (entradas y ajustes), para que cada cambio quede en el kárdex.
 import Layout from "../../../layouts/Layout.astro";
 import AdminNav from "../../../components/admin/AdminNav.astro";
+import ComparadorMercadoLibre from "../../../components/admin/ComparadorMercadoLibre.astro";
 import { graphqlServer } from "../../../lib/graphql";
 import {
   QUERY_ADMIN_PRODUCTO,
   QUERY_CATEGORIAS_ADMIN,
   MUTATION_CREAR_PRODUCTO,
   MUTATION_ACTUALIZAR_PRODUCTO,
-} from "../../../lib/queries/admin.js";
-import { fechaHora, TIPOS_MOVIMIENTO } from "../../../lib/formato.js";
-import { puede } from "../../../lib/permisos.js";
+} from "../../../lib/queries/admin.ts";
+import { fechaHora, TIPOS_MOVIMIENTO } from "../../../lib/formato.ts";
+import { puede } from "../../../lib/permisos.ts";
 
 const { id } = Astro.params;
 const esNuevo = id === "nuevo";
@@ -216,6 +217,8 @@ const verInventario = puede(Astro.locals.user, "inventario");
       </figure>
     </div>
 
+    {!esNuevo && !error && <ComparadorMercadoLibre productoId={id!} nombre={datos.nombre} />}
+
     {
       !esNuevo && movimientos.length > 0 && (
         <div class="panel-card">
@@ -249,7 +252,7 @@ const verInventario = puede(Astro.locals.user, "inventario");
 
 <script>
   import { graphqlClient } from "../../../lib/graphql";
-  import { MUTATION_SUBIR_IMAGEN } from "../../../lib/queries/admin.js";
+  import { MUTATION_SUBIR_IMAGEN } from "../../../lib/queries/admin.ts";
 
   const campo = document.getElementById("campo-imagen") as HTMLInputElement | null;
   const vista = document.getElementById("vista-imagen") as HTMLImageElement | null;

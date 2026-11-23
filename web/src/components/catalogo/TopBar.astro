@@ -5,7 +5,7 @@
 // Búsqueda (?q=): dentro de /categoria/[id] filtra esa categoría (el form se
 // manda a la misma página); en cualquier otra página va a /buscar, que busca
 // en toda la tienda.
-import CartBadge from "../carrito/CartBadge.jsx";
+import CartBadge from "../carrito/CartBadge.tsx";
 import UserMenu from "../auth/UserMenu.astro";
 
 const q = Astro.url.searchParams.get("q") ?? "";

@@ -1,5 +1,5 @@
-// Pagos con Stripe. Los métodos se escriben en minúsculas:
-// credito, debito, oxxo, spei, link.
+// Pagos con Stripe y PayPal. Los métodos se escriben en minúsculas:
+// credito, debito, oxxo, spei, link (Stripe) y paypal.
 export const typeDefs = `#graphql
   "Configuración pública de pagos (la necesita el checkout)."
   type ConfigPagos {
@@ -13,6 +13,8 @@ export const typeDefs = `#graphql
     minimo: Float!
     "Máximo por ficha OXXO, en pesos."
     maximoOxxo: Float!
+    "true si el backend tiene credenciales de PayPal (método PayPal disponible)."
+    paypalHabilitado: Boolean!
   }
 
   "Tarjeta con la que se pagó."
@@ -45,16 +47,26 @@ export const typeDefs = `#graphql
     urlInstrucciones: String
   }
 
+  "Orden de PayPal."
+  type PagoPaypal {
+    "Link para aprobar el pago en PayPal (mientras siga pendiente)."
+    url: String
+    "Id de la orden en PayPal."
+    ordenId: String
+    "Cuenta de PayPal con la que se pagó."
+    correoPagador: String
+  }
+
   "Link de pago (Stripe Checkout) para compartir."
   type PagoLink {
     url: String
     expiraEn: String
   }
 
-  "Cobro de un pedido en Stripe."
+  "Cobro de un pedido (Stripe o PayPal)."
   type Pago {
     id: ID!
-    "credito, debito, oxxo, spei o link."
+    "credito, debito, oxxo, spei, link o paypal."
     metodo: String!
     "pendiente, requiere_accion, pagado, fallido, cancelado o reembolsado."
     estado: String!
@@ -67,10 +79,13 @@ export const typeDefs = `#graphql
     oxxo: PagoOxxo
     spei: PagoSpei
     link: PagoLink
+    paypal: PagoPaypal
     "Id del cobro en Stripe (solo lo ve un ADMIN)."
     stripePaymentIntentId: String
     "Id del link en Stripe (solo lo ve un ADMIN)."
     stripeCheckoutSessionId: String
+    "Id de la captura en PayPal (solo lo ve el personal)."
+    paypalCaptureId: String
     creadoEn: String!
   }
 
@@ -85,7 +100,7 @@ export const typeDefs = `#graphql
 
   "Cómo quiere pagar el cliente."
   input DatosPagoInput {
-    "credito, debito, oxxo, spei o link."
+    "credito, debito, oxxo, spei, link o paypal."
     metodo: String!
     "Solo tarjetas: id del ConfirmationToken que crea Stripe.js con los datos de la tarjeta."
     confirmationTokenId: String
@@ -102,6 +117,8 @@ export const typeDefs = `#graphql
     requiereAccion: Boolean!
     "Secreto del cobro para stripe.handleNextAction (solo cuando requiereAccion es true)."
     clientSecret: String
+    "Solo PayPal: link al que se manda al cliente para aprobar el pago."
+    urlAprobacion: String
   }
 
   extend type Query {
@@ -109,9 +126,9 @@ export const typeDefs = `#graphql
   }
 
   extend type Mutation {
-    "Crea el pedido del usuario con sesión, aparta el stock y le pide el cobro a Stripe."
+    "Crea el pedido del usuario con sesión, aparta el stock y le pide el cobro a Stripe o PayPal."
     crearPedido(data: PedidoInput!, pago: DatosPagoInput!): ResultadoPago!
-    "Le pregunta a Stripe cómo va el pago de un pedido propio y actualiza su estado."
+    "Le pregunta a Stripe o a PayPal cómo va el pago de un pedido propio y actualiza su estado (en PayPal, captura la orden aprobada)."
     sincronizarPago(pedidoId: ID!): Pedido
     "Cancela un pedido propio que sigue esperando su pago (un ADMIN puede cancelar cualquiera)."
     cancelarPedido(id: ID!): Pedido!

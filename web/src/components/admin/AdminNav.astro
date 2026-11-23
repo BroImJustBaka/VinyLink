@@ -6,8 +6,9 @@
 // También monta la isla de avisos en tiempo real (subscription eventosAdmin).
 import "../../styles/admin.css";
 import "../../styles/backoffice.css";
-import AvisosAdmin from "./AvisosAdmin.jsx";
-import { seccionesDe, seccionDe, NOMBRES_ROL } from "../../lib/permisos.js";
+import "../../styles/integraciones.css";
+import AvisosAdmin from "./AvisosAdmin.tsx";
+import { seccionesDe, seccionDe, NOMBRES_ROL } from "../../lib/permisos.ts";
 
 const user = Astro.locals.user!;
 const secciones = seccionesDe(user);

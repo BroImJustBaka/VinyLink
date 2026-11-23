@@ -7,15 +7,15 @@
 // formulario es un POST con un campo `accion` (funciona sin JavaScript).
 import Layout from "../layouts/Layout.astro";
 import { graphqlServer } from "../lib/graphql";
-import { QUERY_MIS_PEDIDOS } from "../lib/queries/pedidos.js";
+import { QUERY_MIS_PEDIDOS } from "../lib/queries/pedidos.ts";
 import {
   QUERY_MI_CUENTA,
   MUTATION_ACTUALIZAR_PERFIL,
   MUTATION_CAMBIAR_PASSWORD,
   MUTATION_ELIMINAR_DIRECCION,
-} from "../lib/queries/auth.js";
-import { dinero, fecha, telefono, ESTADOS_PEDIDO } from "../lib/formato.js";
-import { esPersonal, NOMBRES_ROL } from "../lib/permisos.js";
+} from "../lib/queries/auth.ts";
+import { dinero, fecha, telefono, ESTADOS_PEDIDO } from "../lib/formato.ts";
+import { esPersonal, NOMBRES_ROL } from "../lib/permisos.ts";
 
 type Pedido = {
   id: string;

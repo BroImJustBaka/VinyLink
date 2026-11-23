@@ -4,7 +4,7 @@
 // mismo, exista o no la cuenta, para no revelar qué emails están registrados.
 import Layout from "../layouts/Layout.astro";
 import { graphqlServer } from "../lib/graphql";
-import { MUTATION_SOLICITAR_RESTABLECIMIENTO } from "../lib/queries/auth.js";
+import { MUTATION_SOLICITAR_RESTABLECIMIENTO } from "../lib/queries/auth.ts";
 
 let enviado = false;
 let error: string | null = null;

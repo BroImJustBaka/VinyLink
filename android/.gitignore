@@ -1,0 +1,10 @@
+.gradle/
+build/
+app/build/
+local.properties
+.idea/
+*.iml
+# Llave de firma: nunca al repositorio
+*.keystore
+*.jks
+keystore.properties

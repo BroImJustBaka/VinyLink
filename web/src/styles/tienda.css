@@ -1,0 +1,145 @@
+/* Tienda: modal de producto (precio en dólares y reseñas) y botón de PayPal. */
+.modal {
+  max-height: calc(100dvh - 40px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.modal img {
+  width: 100%;
+  height: auto;
+}
+.precio__dolares {
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: var(--wood);
+}
+
+.estrellas {
+  color: #8f6510; /* mostaza oscurecida: contraste AA sobre papel */
+  letter-spacing: 1px;
+  white-space: nowrap;
+}
+.estrellas__vacias {
+  color: var(--carbon-a20);
+}
+
+.resenas {
+  border-top: 1px solid var(--carbon-a10);
+  margin-top: 8px;
+  padding-top: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.resenas h3 {
+  margin: 0;
+  font-size: 1.15rem;
+}
+.resenas p {
+  margin: 0;
+}
+.resenas__resumen {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.resenas__acciones {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.resenas__form {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 0.9rem;
+}
+.resenas__form input,
+.resenas__form textarea {
+  padding: 8px 10px;
+  border: 1px solid var(--carbon-a20);
+  border-radius: 6px;
+  background: var(--cream);
+  font: inherit;
+  resize: vertical;
+}
+.resenas__calificar {
+  border: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+.resenas__calificar legend {
+  float: left;
+  margin-right: 8px;
+  padding: 0;
+}
+.resenas__calificar label {
+  position: relative;
+  font-size: 1.6rem;
+  line-height: 1;
+  color: var(--carbon-a20);
+  cursor: pointer;
+  padding: 2px;
+}
+.resenas__calificar label.activa {
+  color: #8f6510;
+}
+.resenas__calificar input {
+  position: absolute;
+  opacity: 0;
+  inset: 0;
+  margin: 0;
+  cursor: pointer;
+}
+.resenas__calificar label:has(input:focus-visible) {
+  outline: 2px solid var(--olive);
+  outline-offset: 1px;
+  border-radius: 4px;
+}
+.resenas__lista {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.resenas__lista li {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.92rem;
+}
+.resenas__cabecera {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.resenas__autor {
+  font-size: 0.82rem;
+}
+.resenas__verificada {
+  color: var(--olive);
+  font-weight: 600;
+}
+.error-texto {
+  color: #8a4229;
+  margin: 0;
+}
+
+/* Botón de PayPal (amarillo de marca con texto oscuro: contraste AA). */
+.btn--paypal {
+  background: #ffc439;
+  border-color: #ffc439;
+  color: #111;
+  font-weight: 600;
+  text-decoration: none;
+}
+.btn--paypal:hover:not(:disabled) {
+  background: #f2b71f;
+  border-color: #f2b71f;
+}

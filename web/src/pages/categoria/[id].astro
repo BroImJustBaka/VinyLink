@@ -8,10 +8,10 @@
 import Layout from "../../layouts/Layout.astro";
 import Sidebar from "../../components/catalogo/Sidebar.astro";
 import ProductGrid from "../../components/catalogo/ProductGrid.astro";
-import ProductModal from "../../components/catalogo/ProductModal.jsx";
+import ProductModal from "../../components/catalogo/ProductModal.tsx";
 import ErrorBox from "../../components/catalogo/ErrorBox.astro";
 import { graphqlServer } from "../../lib/graphql";
-import { QUERY_CATEGORIA, QUERY_BUSCAR } from "../../lib/queries/catalogo.js";
+import { QUERY_CATEGORIA, QUERY_BUSCAR } from "../../lib/queries/catalogo.ts";
 
 type Producto = {
   id: string;
@@ -87,5 +87,5 @@ if (!error && !categoria) return Astro.rewrite("/404");
     }
   </section>
 
-  <ProductModal client:load />
+  <ProductModal client:load conSesion={!!Astro.locals.user} />
 </Layout>

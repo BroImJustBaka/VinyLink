@@ -1,7 +1,7 @@
 ---
 // Bloque de /pedido/[id] que explica cómo va el pago: la ficha OXXO, la
-// CLABE para SPEI, el link de pago o la tarjeta con la que se cobró.
-import { dinero, fechaHora, enGrupos, MARCAS_TARJETA } from "../../lib/formato.js";
+// CLABE para SPEI, el link de pago, el botón de PayPal o la tarjeta con la que se cobró.
+import { dinero, fechaHora, enGrupos, MARCAS_TARJETA } from "../../lib/formato.ts";
 
 interface Props {
   pedido: {
@@ -22,11 +22,14 @@ interface Props {
         urlInstrucciones: string;
       } | null;
       link: { url: string; expiraEn: string } | null;
+      paypal: { url: string | null; ordenId: string; correoPagador: string | null } | null;
     };
   };
+  /** El cliente regresó de PayPal sin pagar (?paypal=cancelado). */
+  paypalCancelado?: boolean;
 }
 
-const { pedido } = Astro.props;
+const { pedido, paypalCancelado = false } = Astro.props;
 const pago = pedido.pago;
 const pendiente = pedido.estado === "pendiente";
 const pagado = ["pagado", "enviado", "entregado"].includes(pedido.estado);
@@ -48,6 +51,8 @@ const whatsapp = pago?.link?.url
         {pago?.meses && ` a ${pago.meses} meses sin intereses`}
         {!tarjeta && pedido.metodoPago === "oxxo" && " Pagaste en efectivo en OXXO."}
         {!tarjeta && pedido.metodoPago === "spei" && " Recibimos tu transferencia SPEI."}
+        {pedido.metodoPago === "paypal" &&
+          ` Pagaste con PayPal${pago?.paypal?.correoPagador ? ` (${pago.paypal.correoPagador})` : ""}.`}
       </span>
     </div>
   )
@@ -66,7 +71,10 @@ const whatsapp = pago?.link?.url
 {
   pedido.estado === "reembolsado" && (
     <div class="aviso-info">
-      <p>Te devolvimos el dinero de este pedido. Puede tardar unos días en reflejarse en tu tarjeta.</p>
+      <p>
+        Te devolvimos el dinero de este pedido. Puede tardar unos días en reflejarse en tu
+        {pedido.metodoPago === "paypal" ? " cuenta de PayPal" : " tarjeta"}.
+      </p>
     </div>
   )
 }
@@ -170,7 +178,27 @@ const whatsapp = pago?.link?.url
 }
 
 {
-  pendiente && pago && !pago.oxxo && !pago.spei && !pago.link && (
+  pendiente && pago?.paypal && (
+    <section class="pago-panel">
+      <h3>{paypalCancelado ? "No se completó el pago en PayPal" : "Paga con PayPal"}</h3>
+      <p class="muted">
+        {paypalCancelado
+          ? "Regresaste de PayPal sin pagar. Tu pedido sigue apartado: puedes intentarlo otra vez o cancelarlo."
+          : "Entra a PayPal para aprobar el pago. Al terminar regresas aquí y el pedido se confirma solo."}
+      </p>
+      {pago.paypal.url && (
+        <div class="pago-panel__acciones">
+          <a class="btn btn--primario btn--paypal" href={pago.paypal.url}>
+            {paypalCancelado ? "Intentar de nuevo en PayPal" : "Pagar con PayPal"}
+          </a>
+        </div>
+      )}
+    </section>
+  )
+}
+
+{
+  pendiente && pago && !pago.oxxo && !pago.spei && !pago.link && !pago.paypal && (
     <div class="aviso-info">
       <p>Estamos confirmando tu pago con el banco. Esta página se actualiza sola.</p>
     </div>

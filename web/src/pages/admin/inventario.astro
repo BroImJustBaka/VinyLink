@@ -10,9 +10,9 @@ import {
   QUERY_INVENTARIO,
   MUTATION_REGISTRAR_ENTRADA,
   MUTATION_AJUSTAR_STOCK,
-} from "../../lib/queries/admin.js";
-import { dinero, fechaHora, TIPOS_MOVIMIENTO } from "../../lib/formato.js";
-import { puede } from "../../lib/permisos.js";
+} from "../../lib/queries/admin.ts";
+import { dinero, fechaHora, TIPOS_MOVIMIENTO } from "../../lib/formato.ts";
+import { puede } from "../../lib/permisos.ts";
 
 const POR_PAGINA = 30;
 const params = Astro.url.searchParams;

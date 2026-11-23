@@ -5,8 +5,8 @@
 import Layout from "../../layouts/Layout.astro";
 import AdminNav from "../../components/admin/AdminNav.astro";
 import { graphqlServer } from "../../lib/graphql";
-import { QUERY_BITACORA } from "../../lib/queries/admin.js";
-import { fechaHora } from "../../lib/formato.js";
+import { QUERY_BITACORA } from "../../lib/queries/admin.ts";
+import { fechaHora } from "../../lib/formato.ts";
 
 const POR_PAGINA = 50;
 const ENTIDADES: Record<string, string> = {

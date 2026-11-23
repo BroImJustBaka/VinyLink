@@ -4,18 +4,18 @@
 // La categoría activa sale de la URL (/categoria/[id]), ya no de un estado.
 // Si la página ya pidió las categorías las pasa por props; si no, las pide aquí.
 import { graphqlServer } from "../../lib/graphql";
-import { QUERY_CATEGORIAS } from "../../lib/queries/catalogo.js";
+import { QUERY_CATEGORIAS } from "../../lib/queries/catalogo.ts";
 
 interface Props {
   categorias?: { id: string; nombre: string }[];
 }
 
-let categorias = Astro.props.categorias;
-if (!categorias) {
+let categorias: { id: string; nombre: string }[] = Astro.props.categorias ?? [];
+if (!Astro.props.categorias) {
   try {
     ({ categorias } = await graphqlServer(Astro.cookies, QUERY_CATEGORIAS));
   } catch {
-    categorias = []; // la página principal ya muestra el error; el sidebar solo se vacía
+    // La página principal ya muestra el error; el sidebar solo se queda vacío.
   }
 }
 

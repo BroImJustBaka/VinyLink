@@ -7,8 +7,8 @@ import AdminNav from "../../components/admin/AdminNav.astro";
 import Kpi from "../../components/admin/Kpi.astro";
 import GraficaBarras from "../../components/admin/GraficaBarras.astro";
 import { graphqlServer } from "../../lib/graphql";
-import { QUERY_REPORTES } from "../../lib/queries/admin.js";
-import { dinero } from "../../lib/formato.js";
+import { QUERY_REPORTES } from "../../lib/queries/admin.ts";
+import { dinero } from "../../lib/formato.ts";
 
 const PERIODOS = [7, 30, 90, 365];
 const pedidoDias = Number(Astro.url.searchParams.get("dias"));

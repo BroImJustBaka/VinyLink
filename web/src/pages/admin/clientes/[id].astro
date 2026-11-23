@@ -9,9 +9,9 @@ import {
   QUERY_ADMIN_CLIENTE,
   MUTATION_BLOQUEAR_USUARIO,
   MUTATION_RESTABLECER_CLIENTE,
-} from "../../../lib/queries/admin.js";
-import { dinero, fecha, fechaHora, telefono, ESTADOS_PEDIDO, METODOS_PAGO } from "../../../lib/formato.js";
-import { puede, NOMBRES_ROL } from "../../../lib/permisos.js";
+} from "../../../lib/queries/admin.ts";
+import { dinero, fecha, fechaHora, telefono, ESTADOS_PEDIDO, METODOS_PAGO } from "../../../lib/formato.ts";
+import { puede, NOMBRES_ROL } from "../../../lib/permisos.ts";
 
 const { id } = Astro.params;
 const yo = Astro.locals.user!;

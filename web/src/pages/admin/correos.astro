@@ -6,8 +6,8 @@
 import Layout from "../../layouts/Layout.astro";
 import AdminNav from "../../components/admin/AdminNav.astro";
 import { graphqlServer } from "../../lib/graphql";
-import { QUERY_CORREOS, MUTATION_REENVIAR_CORREO } from "../../lib/queries/admin.js";
-import { fechaHora, ESTADOS_CORREO } from "../../lib/formato.js";
+import { QUERY_CORREOS, MUTATION_REENVIAR_CORREO } from "../../lib/queries/admin.ts";
+import { fechaHora, ESTADOS_CORREO } from "../../lib/formato.ts";
 
 const POR_PAGINA = 30;
 const params = Astro.url.searchParams;

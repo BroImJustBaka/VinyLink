@@ -9,22 +9,36 @@
     "dev": "astro dev",
     "build": "astro build",
     "preview": "astro preview",
-    "astro": "astro"
+    "astro": "astro",
+    "start": "node server.mjs",
+    "iconos": "node scripts/generar-iconos.mjs",
+    "check": "astro check"
   },
   "dependencies": {
     "@astrojs/node": "^11.1.6",
     "@astrojs/react": "^7.0.0",
+    "@fontsource-variable/dm-sans": "^5.3.0",
+    "@fontsource/caveat": "^5.3.0",
+    "@fontsource/dm-serif-display": "^5.3.0",
     "@stripe/react-stripe-js": "^6.12.0",
     "@stripe/stripe-js": "^9.17.0",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "astro": "^7.3.5",
+    "compression": "^1.8.2",
+    "express": "^5.3.0",
     "graphql-ws": "^6.4.1",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
+    "sharp": "^0.35.5",
     "zustand": "^5.0.15"
   },
   "allowScripts": {
     "esbuild": true
+  },
+  "devDependencies": {
+    "@astrojs/check": "^0.9.12",
+    "@types/node": "24.19.1",
+    "typescript": "^6.0.3"
   }
 }

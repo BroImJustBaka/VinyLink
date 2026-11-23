@@ -1,12 +1,22 @@
 ---
 // Panel admin → Configuración de la tienda (solo ADMIN): nombre, email de
 // contacto, envío, IVA y paqueterías. Abajo, qué puede hacer cada rol (solo
-// lectura: los permisos viven en el código del backend, auth/permisos.js).
+// lectura: los permisos viven en el código del backend, auth/permisos.js) y
+// qué APIs de terceros tiene configuradas el backend.
 import Layout from "../../layouts/Layout.astro";
 import AdminNav from "../../components/admin/AdminNav.astro";
 import { graphqlServer } from "../../lib/graphql";
-import { QUERY_CONFIGURACION, MUTATION_ACTUALIZAR_CONFIGURACION } from "../../lib/queries/admin.js";
-import { NOMBRES_ROL } from "../../lib/permisos.js";
+import { QUERY_CONFIGURACION, MUTATION_ACTUALIZAR_CONFIGURACION } from "../../lib/queries/admin.ts";
+import { QUERY_INTEGRACIONES } from "../../lib/queries/integraciones.ts";
+import { NOMBRES_ROL } from "../../lib/permisos.ts";
+
+interface Integracion {
+  clave: string;
+  nombre: string;
+  uso: string;
+  configurada: boolean;
+  variables: string[];
+}
 
 let error: string | null = null;
 
@@ -36,6 +46,12 @@ try {
   datos = await graphqlServer(Astro.cookies, QUERY_CONFIGURACION);
 } catch (err) {
   error ??= err instanceof Error ? err.message : String(err);
+}
+let integraciones: Integracion[] = [];
+try {
+  ({ adminIntegraciones: integraciones } = await graphqlServer(Astro.cookies, QUERY_INTEGRACIONES));
+} catch {
+  // Sin la lista la página sirve igual; la configuración de arriba es lo principal.
 }
 const c = datos?.configuracionTienda;
 const roles = (datos?.permisosPorRol ?? []).filter((r: any) => r.rol !== "CLIENTE");
@@ -97,6 +113,30 @@ const roles = (datos?.permisosPorRol ?? []).filter((r: any) => r.rol !== "CLIENT
             </div>
             <button class="btn btn--primario" type="submit">Guardar configuración</button>
           </form>
+        </div>
+      )
+    }
+
+    {
+      integraciones.length > 0 && (
+        <div class="panel-card">
+          <h3>Integraciones (APIs de terceros)</h3>
+          <p class="muted">
+            Las credenciales viven en <code>back/.env</code>; sin ellas, cada función se oculta o se desactiva sola.
+          </p>
+          <ul class="integraciones">
+            {integraciones.map((i) => (
+              <li>
+                <span class={`estado-integracion estado-integracion--${i.configurada ? "si" : "no"}`}>
+                  {i.configurada ? "✓ Activa" : "Sin configurar"}
+                </span>
+                <span>
+                  <strong>{i.nombre}</strong> · {i.uso}
+                  {!i.configurada && <span class="muted tabla__sub">Falta: {i.variables.join(", ")}</span>}
+                </span>
+              </li>
+            ))}
+          </ul>
         </div>
       )
     }

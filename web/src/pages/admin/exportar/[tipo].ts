@@ -3,7 +3,7 @@
 // entrega como archivo. El middleware ya dejó pasar solo al personal.
 import type { APIRoute } from "astro";
 import { graphqlServer } from "../../../lib/graphql";
-import { QUERY_EXPORTAR } from "../../../lib/queries/admin.js";
+import { QUERY_EXPORTAR } from "../../../lib/queries/admin.ts";
 
 export const GET: APIRoute = async ({ params, url, cookies }) => {
   const tipo = (params.tipo ?? "").replace(/\.csv$/, "");

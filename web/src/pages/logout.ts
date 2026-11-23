@@ -1,7 +1,7 @@
 // Dueño: Persona C. Solo POST (un GET desde otra página no debe cerrar sesión).
 import type { APIRoute } from "astro";
 import { SESSION_COOKIE, graphqlServer } from "../lib/graphql";
-import { MUTATION_LOGOUT } from "../lib/queries/auth.js";
+import { MUTATION_LOGOUT } from "../lib/queries/auth.ts";
 
 export const POST: APIRoute = async ({ cookies, redirect }) => {
   // Invalida la sesión en la DB. Si falla (backend caído, sesión ya vencida)

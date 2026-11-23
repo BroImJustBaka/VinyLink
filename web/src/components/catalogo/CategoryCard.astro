@@ -1,6 +1,8 @@
 ---
 // Dueño: Persona A. Migrado de front/src/components/CategoryCard.jsx.
 // Antes era un <button> que avisaba al padre; ahora cada categoría tiene URL.
+import { imagen, srcsetDe } from "../../lib/imagen.ts";
+
 interface Props {
   categoria: { id: string; nombre: string; imagen: string };
 }
@@ -9,6 +11,15 @@ const { categoria } = Astro.props;
 ---
 
 <a class="category-card" href={`/categoria/${categoria.id}`}>
-  <img src={categoria.imagen} alt={categoria.nombre} loading="lazy" />
+  <img
+    src={imagen(categoria.imagen, 300)}
+    srcset={srcsetDe(categoria.imagen, [200, 300, 400])}
+    sizes="(max-width: 480px) 45vw, 180px"
+    alt={categoria.nombre}
+    width="300"
+    height="300"
+    loading="lazy"
+    decoding="async"
+  />
   <span>{categoria.nombre}</span>
 </a>

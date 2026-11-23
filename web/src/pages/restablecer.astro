@@ -5,7 +5,7 @@
 // iniciar sesión con la contraseña nueva.
 import Layout from "../layouts/Layout.astro";
 import { graphqlServer } from "../lib/graphql";
-import { MUTATION_RESTABLECER_PASSWORD } from "../lib/queries/auth.js";
+import { MUTATION_RESTABLECER_PASSWORD } from "../lib/queries/auth.ts";
 
 let token = Astro.url.searchParams.get("token") ?? "";
 let listo = false;

@@ -20,6 +20,8 @@ import * as notificaciones from "./modules/notificaciones/typeDefs.js";
 import * as notificacionesR from "./modules/notificaciones/resolvers.js";
 import * as tiempoReal from "./modules/tiempo-real/typeDefs.js";
 import * as tiempoRealR from "./modules/tiempo-real/resolvers.js";
+import * as integraciones from "./modules/integraciones/typeDefs.js";
+import * as integracionesR from "./modules/integraciones/resolvers.js";
 
 const base = `#graphql
   type Query
@@ -38,6 +40,7 @@ export const typeDefs = [
   configuracion.typeDefs,
   notificaciones.typeDefs,
   tiempoReal.typeDefs,
+  integraciones.typeDefs,
 ];
 
 function mergeResolvers(...mapas) {
@@ -65,5 +68,6 @@ export const resolvers = mergeResolvers(
   cuponesR.resolvers,
   configuracionR.resolvers,
   notificacionesR.resolvers,
-  tiempoRealR.resolvers
+  tiempoRealR.resolvers,
+  integracionesR.resolvers
 );

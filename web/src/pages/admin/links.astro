@@ -5,8 +5,8 @@
 import Layout from "../../layouts/Layout.astro";
 import AdminNav from "../../components/admin/AdminNav.astro";
 import { graphqlServer } from "../../lib/graphql";
-import { QUERY_LINKS, MUTATION_CREAR_LINK_ADMIN } from "../../lib/queries/admin.js";
-import { dinero, fechaHora, ESTADOS_PEDIDO } from "../../lib/formato.js";
+import { QUERY_LINKS, MUTATION_CREAR_LINK_ADMIN } from "../../lib/queries/admin.ts";
+import { dinero, fechaHora, ESTADOS_PEDIDO } from "../../lib/formato.ts";
 
 const RENGLONES = 5; // renglones de producto en el formulario
 

@@ -4,6 +4,8 @@
 //   oxxo             → PaymentIntent que genera una ficha para pagar en efectivo
 //   spei             → PaymentIntent que da una CLABE para transferir desde el banco
 //   link             → Checkout Session: una página de Stripe que se puede compartir
+//   paypal           → Orden de PayPal (Orders v2): el cliente la aprueba en
+//                      PayPal y al regresar la tienda la captura (ver ./paypal.js)
 //
 // Flujo común: se crea el pedido "pendiente" apartando el stock, se le pide
 // el cobro a Stripe y se guarda lo que respondió. Después, el webhook, la
@@ -23,9 +25,21 @@ import {
 } from "../pedidos/servicio.js";
 import { notificarPedido } from "../notificaciones/servicio.js";
 import { stripe, requireStripe, WEB_URL, modoPrueba } from "./stripe.js";
+import {
+  requirePaypal,
+  crearOrden,
+  verOrden,
+  capturarOrden,
+  reembolsarCaptura,
+  leerOrden,
+  mensajeDeErrorPaypal,
+} from "./paypal.js";
 
-export const METODOS = ["credito", "debito", "oxxo", "spei", "link"];
+export const METODOS = ["credito", "debito", "oxxo", "spei", "link", "paypal"];
 const METODOS_TARJETA = ["credito", "debito"];
+// Métodos donde el cliente paga en el momento (tarjeta o PayPal): el carrito
+// se vacía hasta que el cobro pasa y no se manda el correo de "esperando pago".
+const METODOS_INMEDIATOS = ["credito", "debito", "paypal"];
 
 export const MINIMO_CENTAVOS = 1000; // Stripe no cobra menos de $10.00 MXN
 export const MAXIMO_OXXO_CENTAVOS = 1000000; // una ficha OXXO admite hasta $10,000.00 MXN
@@ -239,6 +253,8 @@ export async function aplicarEstado(pedidoId, lectura, { reponerStock = false, u
               -- pago el cobro puede aparecer después); si no, se conserva el que había.
               stripe_payment_intent_id = COALESCE($5, stripe_payment_intent_id),
               stripe_checkout_session_id = COALESCE($6, stripe_checkout_session_id),
+              paypal_order_id = COALESCE($7, paypal_order_id),
+              paypal_capture_id = COALESCE($8, paypal_capture_id),
               actualizado_en = NOW()
         WHERE id = $1`,
       [
@@ -248,6 +264,8 @@ export async function aplicarEstado(pedidoId, lectura, { reponerStock = false, u
         error,
         lectura.paymentIntentId ?? null,
         lectura.checkoutSessionId ?? null,
+        lectura.paypalOrderId ?? null,
+        lectura.paypalCaptureId ?? null,
       ]
     );
 
@@ -303,9 +321,9 @@ export async function aplicarEstado(pedidoId, lectura, { reponerStock = false, u
   // Efectos fuera de la transacción (no deben deshacer el cambio si fallan).
   if (resultado?.cambio) {
     const { pedido, pago } = resultado;
-    // Con tarjeta el carrito se vacía hasta que el cobro pasa: si se rechaza,
-    // el cliente conserva su carrito para intentar con otra tarjeta.
-    if (pago.estado === "pagado" && METODOS_TARJETA.includes(pago.metodo)) {
+    // Con tarjeta o PayPal el carrito se vacía hasta que el cobro pasa: si se
+    // rechaza, el cliente conserva su carrito para intentar de nuevo.
+    if (pago.estado === "pagado" && METODOS_INMEDIATOS.includes(pago.metodo)) {
       await vaciarCarrito(pedido.usuario_id);
     }
     // Un cobro directo que falló se cancela también en Stripe, para que nadie
@@ -328,7 +346,7 @@ async function avisarCambio(pedido, pago, estado, { error, yaReembolsado }) {
     void notificarPedido(pedido.id, "pagado");
   } else if (estado === "cancelado") {
     await publicarEventoAdmin({ tipo: "pedido_cancelado", mensaje: `Se canceló el pedido ${n}${error ? `: ${error}` : ""}`, pedidoId: pedido.id });
-    if (!METODOS_TARJETA.includes(pago.metodo)) void notificarPedido(pedido.id, "cancelado", { motivo: error });
+    if (!METODOS_INMEDIATOS.includes(pago.metodo)) void notificarPedido(pedido.id, "cancelado", { motivo: error });
   } else if (estado === "reembolsado") {
     const monto = (aCentavos(pedido.total) - yaReembolsado) / 100;
     await publicarEventoAdmin({ tipo: "reembolso", mensaje: `Se reembolsó el pedido ${n}`, pedidoId: pedido.id });
@@ -339,9 +357,10 @@ async function avisarCambio(pedido, pago, estado, { error, yaReembolsado }) {
 // Le pregunta a Stripe cómo va el cobro de un pedido y lo aplica. Lo usan el
 // webhook, la página del pedido (sondeo) y la revisión periódica.
 export async function sincronizarPedido(pedidoId) {
-  if (!stripe) return null;
   const pago = await one("SELECT * FROM pago WHERE pedido_id = $1", [pedidoId]);
   if (!pago) return null;
+  if (pago.metodo === "paypal") return sincronizarPaypal(pedidoId, pago);
+  if (!stripe) return null;
 
   let lectura;
   if (pago.stripe_checkout_session_id) {
@@ -668,11 +687,71 @@ export async function crearLinkDePago({ usuario, items, extras = {} }) {
   return { pedidoId: pedido.id, requiereAccion: false, clientSecret: null };
 }
 
+// PayPal: se crea el pedido pendiente y una orden de PayPal. El navegador
+// manda al cliente al link de aprobación; al regresar, sincronizarPaypal la
+// captura (es el momento en que de verdad se cobra).
+async function pagarConPaypal({ usuario, items, extras }) {
+  requirePaypal();
+  const { pedido, totalCentavos } = await crearPedidoPendiente({
+    usuarioId: usuario.id,
+    items,
+    metodo: "paypal",
+    validarTotal: validadorDeTotal("paypal"),
+    ...extras,
+  });
+
+  let orden;
+  try {
+    orden = await crearOrden({
+      pedidoId: pedido.id,
+      totalCentavos,
+      descripcion: descripcion(pedido.id),
+      returnUrl: `${WEB_URL}/pedido/${pedido.id}?paypal=aprobado`,
+      cancelUrl: `${WEB_URL}/pedido/${pedido.id}?paypal=cancelado`,
+      idempotencia: llaveIdempotencia(pedido.id, "paypal"),
+    });
+  } catch (err) {
+    const mensaje = mensajeDeErrorPaypal(err);
+    console.error(`PayPal rechazó la orden del pedido ${pedido.id}:`, err?.message, JSON.stringify(err?.cuerpo ?? ""));
+    await aplicarEstado(pedido.id, { estadoPago: "fallido", detalle: {}, error: mensaje });
+    throw new Error(mensaje);
+  }
+
+  const lectura = leerOrden(orden);
+  await aplicarEstado(pedido.id, lectura);
+  const url = lectura.detalle.paypal.url;
+  if (!url) throw new Error("PayPal no regresó el link para aprobar el pago.");
+  return { pedidoId: pedido.id, requiereAccion: false, clientSecret: null, urlAprobacion: url };
+}
+
+// Le pregunta a PayPal cómo va la orden. Si el cliente ya la aprobó (y el
+// pago sigue esperando), la captura. Capturar es idempotente: si dos
+// revisiones llegan juntas, PayPal-Request-Id evita cobrar dos veces.
+async function sincronizarPaypal(pedidoId, pago) {
+  if (!pago.paypal_order_id) return null;
+  let lectura;
+  try {
+    lectura = leerOrden(await verOrden(pago.paypal_order_id));
+    if (lectura.aprobada && ["pendiente", "requiere_accion"].includes(pago.estado)) {
+      lectura = leerOrden(await capturarOrden(pago.paypal_order_id));
+    }
+  } catch (err) {
+    // 422 al capturar = PayPal rechazó el método de pago que eligió el cliente.
+    if (err?.status === 422) {
+      lectura = { estadoPago: "fallido", detalle: {}, error: mensajeDeErrorPaypal(err) };
+    } else {
+      throw new Error(mensajeDeErrorPaypal(err));
+    }
+  }
+  return aplicarEstado(pedidoId, lectura);
+}
+
 // Punto de entrada de la mutación crearPedido: elige el método.
 export async function cobrar({ usuario, items, pago, cupon = null, envio = null, guardarDireccion = false }) {
-  requireStripe();
   const metodo = pago?.metodo;
   if (!METODOS.includes(metodo)) throw new Error("Elige un método de pago válido");
+  if (metodo === "paypal") requirePaypal();
+  else requireStripe();
   const extras = { cupon, envio };
   let resultado;
   if (METODOS_TARJETA.includes(metodo)) {
@@ -687,6 +766,8 @@ export async function cobrar({ usuario, items, pago, cupon = null, envio = null,
     resultado = await pagarConOxxo({ usuario, items, nombre: pago.nombre, email: pago.email, extras });
   } else if (metodo === "spei") {
     resultado = await pagarConSpei({ usuario, items, extras });
+  } else if (metodo === "paypal") {
+    resultado = await pagarConPaypal({ usuario, items, extras });
   } else {
     // El cliente comparte el link, así que su carrito ya se puede vaciar.
     resultado = await crearLinkDePago({ usuario, items, extras });
@@ -694,7 +775,7 @@ export async function cobrar({ usuario, items, pago, cupon = null, envio = null,
   }
   // OXXO, SPEI y link quedan esperando el pago: se manda el correo con el
   // enlace a las instrucciones. (Con tarjeta llega directo el de "pagado".)
-  if (!METODOS_TARJETA.includes(metodo)) void notificarPedido(resultado.pedidoId, "creado");
+  if (!METODOS_INMEDIATOS.includes(metodo)) void notificarPedido(resultado.pedidoId, "creado");
   if (envio && guardarDireccion) {
     await guardarEnLibreta(usuario.id, envio).catch((err) =>
       console.error("No se pudo guardar la dirección en la libreta:", err.message)
@@ -760,15 +841,15 @@ export async function cancelarPedidoPendiente(pedidoId, motivo, usuarioId = null
 // conserva su estado y solo aumenta `monto_reembolsado` (por ejemplo, una
 // pieza que llegó dañada).
 export async function reembolsarPedido(pedidoId, { reponerStock = true, monto = null, motivo = null, usuarioId = null } = {}) {
-  const s = requireStripe();
   const pedido = await one("SELECT * FROM pedido WHERE id = $1", [pedidoId]);
   const pago = await one("SELECT * FROM pago WHERE pedido_id = $1", [pedidoId]);
   if (!pedido) throw new Error(`No existe el pedido #${pedidoId}`);
   if (!["pagado", "enviado", "entregado"].includes(pedido.estado)) {
     throw new Error("Solo se pueden reembolsar pedidos pagados");
   }
-  if (!pago?.stripe_payment_intent_id || pago.estado !== "pagado") {
-    throw new Error("Este pedido no se cobró con Stripe; no hay un pago en línea que reembolsar");
+  const conPaypal = pago?.metodo === "paypal";
+  if (pago?.estado !== "pagado" || !(conPaypal ? pago.paypal_capture_id : pago.stripe_payment_intent_id)) {
+    throw new Error("Este pedido no tiene un pago en línea que reembolsar");
   }
 
   const restante = aCentavos(pedido.total) - aCentavos(pedido.monto_reembolsado ?? 0);
@@ -782,40 +863,28 @@ export async function reembolsarPedido(pedidoId, { reponerStock = true, monto = 
   const parcial = montoCentavos < restante;
   motivo = motivo?.trim() || null;
 
-  const pi = await s.paymentIntents.retrieve(pago.stripe_payment_intent_id, {
-    expand: ["latest_charge"],
-  });
-  const tipo = pi.latest_charge?.payment_method_details?.type;
-  if (tipo !== "card") {
-    throw new Error(
-      tipo === "oxxo"
-        ? "Stripe no permite reembolsar pagos hechos en OXXO. Devuelve el dinero por otro medio (por ejemplo, una transferencia)."
-        : "Los pagos por SPEI se reembolsan desde el Dashboard de Stripe, porque se necesita la cuenta bancaria del cliente."
-    );
-  }
-
-  let reembolso;
-  try {
-    reembolso = await s.refunds.create(
-      {
-        payment_intent: pi.id,
-        amount: montoCentavos,
-        reason: "requested_by_customer",
-        metadata: { pedido_id: String(pedidoId), ...(motivo ? { motivo: motivo.slice(0, 200) } : {}) },
-      },
-      { idempotencyKey: llaveIdempotencia(pedidoId, "reembolso") }
-    );
-  } catch (err) {
-    throw new Error(`Stripe no pudo hacer el reembolso: ${mensajeDeError(err)}`);
-  }
+  const reembolsoId = conPaypal
+    ? await reembolsarConPaypal(pago, pedidoId, montoCentavos, motivo)
+    : await reembolsarConStripe(pago, pedidoId, montoCentavos, motivo);
 
   await transaccion(async (client) => {
     await client.query(
-      `INSERT INTO reembolso (pedido_id, monto_centavos, parcial, repuso_stock, motivo, stripe_reembolso_id, usuario_id)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-      [pedidoId, montoCentavos, parcial, !parcial && reponerStock, motivo, reembolso.id, usuarioId]
+      `INSERT INTO reembolso (pedido_id, monto_centavos, parcial, repuso_stock, motivo, stripe_reembolso_id, paypal_reembolso_id, usuario_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+      [
+        pedidoId,
+        montoCentavos,
+        parcial,
+        !parcial && reponerStock,
+        motivo,
+        conPaypal ? null : reembolsoId,
+        conPaypal ? reembolsoId : null,
+        usuarioId,
+      ]
     );
-    await client.query("UPDATE pago SET stripe_reembolso_id = $2 WHERE id = $1", [pago.id, reembolso.id]);
+    if (!conPaypal) {
+      await client.query("UPDATE pago SET stripe_reembolso_id = $2 WHERE id = $1", [pago.id, reembolsoId]);
+    }
     if (parcial) {
       await client.query("UPDATE pedido SET monto_reembolsado = monto_reembolsado + $2 WHERE id = $1", [
         pedidoId,
@@ -842,6 +911,53 @@ export async function reembolsarPedido(pedidoId, { reponerStock = true, monto = 
     { estadoPago: "reembolsado", detalle: {}, error: null },
     { reponerStock, usuarioId }
   );
+}
+
+// Reembolso en Stripe (solo tarjetas). Regresa el id del reembolso.
+async function reembolsarConStripe(pago, pedidoId, montoCentavos, motivo) {
+  const s = requireStripe();
+  const pi = await s.paymentIntents.retrieve(pago.stripe_payment_intent_id, {
+    expand: ["latest_charge"],
+  });
+  const tipo = pi.latest_charge?.payment_method_details?.type;
+  if (tipo !== "card") {
+    throw new Error(
+      tipo === "oxxo"
+        ? "Stripe no permite reembolsar pagos hechos en OXXO. Devuelve el dinero por otro medio (por ejemplo, una transferencia)."
+        : "Los pagos por SPEI se reembolsan desde el Dashboard de Stripe, porque se necesita la cuenta bancaria del cliente."
+    );
+  }
+  try {
+    const reembolso = await s.refunds.create(
+      {
+        payment_intent: pi.id,
+        amount: montoCentavos,
+        reason: "requested_by_customer",
+        metadata: { pedido_id: String(pedidoId), ...(motivo ? { motivo: motivo.slice(0, 200) } : {}) },
+      },
+      { idempotencyKey: llaveIdempotencia(pedidoId, "reembolso") }
+    );
+    return reembolso.id;
+  } catch (err) {
+    throw new Error(`Stripe no pudo hacer el reembolso: ${mensajeDeError(err)}`);
+  }
+}
+
+// Reembolso en PayPal: se devuelve (total o parcialmente) la captura.
+async function reembolsarConPaypal(pago, pedidoId, montoCentavos, motivo) {
+  let r;
+  try {
+    r = await reembolsarCaptura(pago.paypal_capture_id, montoCentavos, {
+      idempotencia: llaveIdempotencia(pedidoId, "reembolso-paypal"),
+      nota: motivo ?? `Reembolso del pedido #${pedidoId} de VinyLink`,
+    });
+  } catch (err) {
+    throw new Error(`PayPal no pudo hacer el reembolso: ${mensajeDeErrorPaypal(err)}`);
+  }
+  if (r.status && !["COMPLETED", "PENDING"].includes(r.status)) {
+    throw new Error(`PayPal no completó el reembolso (quedó como ${r.status}).`);
+  }
+  return r.id;
 }
 
 // Solo en modo de prueba: Stripe deja "fingir" que llegó la transferencia SPEI.

@@ -169,9 +169,16 @@
   );
 }
 .hero--foto {
-  background-image: var(--hero-img);
-  background-size: cover;
-  background-position: center 30%;
+  background-image: none;
+}
+.hero__foto {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center 30%;
 }
 .hero--foto::before {
   content: "";
@@ -271,7 +278,7 @@
   font-family: var(--font-serif);
   font-size: 1.05rem;
 }
-.card h4 {
+.card h3 {
   margin: 2px 0 0;
   font-family: var(--font-sans);
   font-weight: 600;

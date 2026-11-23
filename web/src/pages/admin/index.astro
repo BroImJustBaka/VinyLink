@@ -8,8 +8,8 @@ import Kpi from "../../components/admin/Kpi.astro";
 import GraficaBarras from "../../components/admin/GraficaBarras.astro";
 import GraficaColumnas from "../../components/admin/GraficaColumnas.astro";
 import { graphqlServer } from "../../lib/graphql";
-import { QUERY_TABLERO } from "../../lib/queries/admin.js";
-import { dinero, fecha, ESTADOS_PEDIDO, METODOS_PAGO } from "../../lib/formato.js";
+import { QUERY_TABLERO } from "../../lib/queries/admin.ts";
+import { dinero, fecha, ESTADOS_PEDIDO, METODOS_PAGO } from "../../lib/formato.ts";
 
 const PERIODOS = [7, 30, 90];
 const pedidoDias = Number(Astro.url.searchParams.get("dias"));

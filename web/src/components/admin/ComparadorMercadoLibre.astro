@@ -1,0 +1,134 @@
+---
+// Panel → Editar producto: compara el precio de la tienda contra Mercado
+// Libre México. Se consulta solo cuando el admin lo pide (?comparar=1), para
+// no hacer lenta la página. Formulario GET: funciona sin JavaScript.
+import { graphqlServer } from "../../lib/graphql";
+import { QUERY_PRECIOS_MERCADO_LIBRE } from "../../lib/queries/integraciones.ts";
+import { dinero, fechaHora } from "../../lib/formato.ts";
+
+interface Props {
+  productoId: string;
+  nombre: string;
+}
+
+interface Publicacion {
+  id: string;
+  titulo: string;
+  precio: number;
+  url: string;
+  imagen: string | null;
+  condicion: string | null;
+}
+
+interface Precios {
+  busqueda: string;
+  total: number;
+  muestra: number;
+  descartados: number;
+  minimo: number | null;
+  maximo: number | null;
+  promedio: number | null;
+  mediana: number | null;
+  precioTienda: number;
+  diferenciaPorcentaje: number | null;
+  consultadoEn: string;
+  publicaciones: Publicacion[];
+}
+
+const { productoId, nombre } = Astro.props;
+const pedir = Astro.url.searchParams.get("comparar") === "1";
+const busqueda = (Astro.url.searchParams.get("busqueda") ?? "").trim().slice(0, 120) || nombre;
+
+let precios: Precios | null = null;
+let error: string | null = null;
+if (pedir) {
+  try {
+    ({ adminPreciosMercadoLibre: precios } = await graphqlServer(Astro.cookies, QUERY_PRECIOS_MERCADO_LIBRE, {
+      productoId,
+      busqueda,
+    }));
+  } catch (err) {
+    error = err instanceof Error ? err.message : String(err);
+  }
+}
+
+const dif = precios?.diferenciaPorcentaje ?? null;
+const veredicto =
+  dif === null
+    ? null
+    : Math.abs(dif) <= 5
+      ? { clase: "igual", texto: "En línea con el mercado" }
+      : dif > 0
+        ? { clase: "caro", texto: `${dif}% arriba de la mediana` }
+        : { clase: "barato", texto: `${Math.abs(dif)}% abajo de la mediana` };
+---
+
+<div class="panel-card" id="mercado-libre">
+  <div class="panel-card__cabecera">
+    <h3>Precio contra Mercado Libre</h3>
+  </div>
+  <form method="get" action="#mercado-libre" class="comparador__form">
+    <input type="hidden" name="comparar" value="1" />
+    <label>
+      Buscar en Mercado Libre México
+      <input type="search" name="busqueda" value={busqueda} maxlength="120" />
+    </label>
+    <button class="btn btn--primario" type="submit">{precios ? "Volver a comparar" : "Comparar precios"}</button>
+  </form>
+
+  {error && <p class="error-box">{error}</p>}
+
+  {
+    precios && precios.muestra === 0 && (
+      <p class="muted">Mercado Libre no encontró publicaciones para "{precios.busqueda}". Prueba con otras palabras.</p>
+    )
+  }
+
+  {
+    precios && precios.muestra > 0 && (
+      <>
+        <dl class="comparador__resumen">
+          <div>
+            <dt>Tu precio</dt>
+            <dd>{dinero(precios.precioTienda)}</dd>
+          </div>
+          <div>
+            <dt>Mediana</dt>
+            <dd>{dinero(precios.mediana)}</dd>
+          </div>
+          <div>
+            <dt>Rango</dt>
+            <dd>
+              {dinero(precios.minimo)} – {dinero(precios.maximo)}
+            </dd>
+          </div>
+          <div>
+            <dt>Promedio</dt>
+            <dd>{dinero(precios.promedio)}</dd>
+          </div>
+        </dl>
+        {veredicto && <p class={`comparador__veredicto comparador__veredicto--${veredicto.clase}`}>{veredicto.texto}</p>}
+        <p class="muted">
+          {precios.muestra} precios de {precios.total} publicaciones
+          {precios.descartados > 0 && ` (se descartaron ${precios.descartados} atípicos, como accesorios o lotes)`} ·
+          consultado {fechaHora(precios.consultadoEn)}
+        </p>
+        <ul class="comparador__lista">
+          {precios.publicaciones
+            // Solo las que entraron al resumen (sin accesorios ni lotes atípicos).
+            .filter((p) => p.precio >= (precios.minimo ?? 0) && p.precio <= (precios.maximo ?? Infinity))
+            .slice(0, 6)
+            .map((p) => (
+            <li>
+              <a href={p.url} target="_blank" rel="noopener noreferrer">
+                {p.titulo}
+              </a>
+              <span class="muted">{p.condicion}</span>
+              <strong>{dinero(p.precio)}</strong>
+            </li>
+          ))}
+        </ul>
+      </>
+    )
+  }
+</div>

@@ -1,0 +1,12 @@
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "mx.ceti.vinylink",
+      "sha256_cert_fingerprints": [
+        "CF:AB:CF:9E:F9:AC:91:48:E2:4A:BB:4F:FE:94:60:B6:86:22:34:71:86:98:BF:2B:AB:AF:2E:C4:FD:F5:1E:8E"
+      ]
+    }
+  }
+]

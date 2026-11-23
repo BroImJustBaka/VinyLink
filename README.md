@@ -3,8 +3,9 @@
 Tienda en línea de discos, audífonos e instrumentos musicales. El cliente
 explora el catálogo por categorías, busca productos, arma su carrito, crea una
 cuenta y paga su pedido con tarjeta de crédito o débito, efectivo en OXXO,
-transferencia SPEI o un link de pago (todo con Stripe). Después puede consultar
-su historial desde su perfil. El personal de la tienda tiene un **back office**
+transferencia SPEI, un link de pago (Stripe) o **PayPal**. Después puede consultar
+su historial desde su perfil y preguntarle a **Vinny**, el asistente con IA.
+La tienda se instala en el teléfono como **PWA** o con el **APK de Android**. El personal de la tienda tiene un **back office**
 completo: ventas y reportes, pedidos con envío y guía, catálogo, inventario con
 kárdex y proveedores, clientes, cupones, correos, bitácora de auditoría y
 configuración, con roles (Admin, Almacén, Soporte, Finanzas) y avisos en tiempo
@@ -13,7 +14,10 @@ real por **GraphQL subscriptions** (WebSocket).
 - **Frontend:** [Astro](https://astro.build) con renderizado en servidor e islas de React.
 - **Backend:** API GraphQL con Apollo Server; subscriptions con `graphql-ws` sobre WebSocket.
 - **Base de datos:** PostgreSQL (hospedada en [Neon](https://neon.tech)).
-- **Pagos:** [Stripe](https://stripe.com/mx) (modo de prueba para desarrollo).
+- **Pagos:** [Stripe](https://stripe.com/mx) y [PayPal](https://developer.paypal.com) (modo de prueba/sandbox para desarrollo).
+- **Asistente con IA y reseñas:** microservicio en Python (FastAPI) con Gemini (Google AI Studio, plan gratuito) y MongoDB, en `agente/`.
+- **APIs de terceros:** Stripe, PayPal, Gemini, Banxico (tipo de cambio) y COPOMEX (códigos postales); Mercado Libre (comparador de precios) es opcional.
+- **App móvil:** PWA (manifest + service worker) y APK de Android (Trusted Web Activity, en `android/`).
 
 ## Funcionalidades
 
@@ -29,6 +33,11 @@ real por **GraphQL subscriptions** (WebSocket).
 | **Roles y permisos** | `ADMIN`, `ALMACEN`, `SOPORTE` y `FINANZAS` ven solo las secciones de su rol; el backend revisa el permiso en cada operación (`requirePermiso`). |
 | **Tiempo real** | Subscriptions `pedidoActualizado`, `stockActualizado` y `eventosAdmin`: avisos en el panel (pedido nuevo, pago, stock bajo, acciones del personal), la página del pedido del cliente se actualiza sola y el stock del detalle de producto cambia en vivo. |
 | **Correos** | Confirmación, pago, envío con guía, cancelación, reembolso y recuperación de contraseña. Con SMTP se mandan de verdad; sin SMTP quedan "simulados" y se leen en `/admin/correos`. |
+| **PayPal** | Método "PayPal" en el checkout: el backend crea la orden (Orders API v2), el cliente la aprueba en PayPal y al volver a `/pedido/[id]?paypal=aprobado` el servidor captura el pago. Si cancela, puede reintentar o cancelar el pedido. Reembolsos desde el panel. |
+| **Asistente Vinny** | Botón flotante en toda la tienda: busca productos, explica categorías, consulta los pedidos del cliente con sesión y da el tipo de cambio. Las tarjetas de producto del chat se agregan al carrito. Ver `agente/README.md`. |
+| **Reseñas** | Calificación y comentario en el detalle de producto (MongoDB). Se marca "compra verificada" si el cliente tiene un pedido pagado con ese producto. |
+| **Integraciones** | Precio aproximado en dólares (Banxico), autollenado de estado, ciudad y colonias por código postal (COPOMEX) y comparador de precios contra Mercado Libre en el panel (Productos → editar). `/admin/configuracion` muestra qué integraciones están configuradas. |
+| **PWA y app** | Manifest, íconos adaptables, service worker (`web/public/sw.js`) con página sin conexión y APK de Android firmado. Lighthouse en móvil: 95–100 en las cuatro categorías. |
 | **Cuentas** | Registro e inicio de sesión con contraseñas hasheadas (bcrypt), sesiones en base de datos y cookie `httpOnly`. Recuperar contraseña por correo, editar perfil y cambiar contraseña. Cuentas bloqueables. |
 
 ## Rutas
@@ -79,7 +88,8 @@ back/                     API GraphQL (Apollo Server + pg)
       catalogo/           categorías, productos y búsqueda
       pedidos/            carrito en DB, pedidos, historial e inventario (servicio.js)
       auth/               usuarios, sesiones, login/registro, requireUser/requireAdmin
-      pagos/              Stripe: cobros, webhook y revisión de pagos vencidos
+      pagos/              Stripe y PayPal: cobros, webhook, captura y revisión de pagos vencidos
+      integraciones/      Mercado Libre, Banxico y COPOMEX (queries para la web)
       admin/              estadísticas, clientes, envíos, reembolsos, bitácora y CSV
       inventario/         kárdex (moverStock), entradas, ajustes y proveedores
       cupones/            cupones y su validación
@@ -89,23 +99,31 @@ back/                     API GraphQL (Apollo Server + pg)
     lib/pubsub.js         eventos en tiempo real (PubSub)
     lib/bitacora.js       registrar() de la bitácora de auditoría
   pruebas/                pruebas automáticas (npm run probar) y demo (npm run demo)
-web/                      Frontend Astro (SSR con @astrojs/node)
+web/                      Frontend Astro (SSR con @astrojs/node) y PWA
+  server.mjs              servidor de producción (Express + compresión + caché)
+  public/                 manifest, sw.js, offline.html, íconos y .well-known/assetlinks.json
   src/
-    pages/                rutas (ver tabla de arriba) + api/graphql.ts (proxy)
+    pages/                rutas (ver tabla de arriba), api/graphql.ts y api/agente (proxies), img.ts (optimizador)
     layouts/Layout.astro  estructura común: TopBar, sidebar opcional y Footer
     components/
       catalogo/           TopBar, Sidebar, Hero, ProductCard, ProductModal (isla)…
       carrito/            CartBadge, CartView y CheckoutForm (islas)
       auth/               UserMenu, AuthForm
       pagos/              PanelPago (ficha/CLABE/link) y SeguimientoPago (isla)
-      admin/              AdminNav, AvisosAdmin (isla en vivo), Kpi y gráficas
-    stores/cart.js        store de Zustand del carrito
+      admin/              AdminNav, AvisosAdmin (isla en vivo), Kpi, gráficas y ComparadorMercadoLibre
+      asistente/          AsistenteChat (isla del asistente Vinny)
+    stores/cart.ts        store de Zustand del carrito
     lib/graphql.ts        graphqlServer() y graphqlClient()
-    lib/formato.js        dinero, fechas y nombres de estados y métodos de pago
-    lib/permisos.js       secciones del panel y el permiso de cada una
-    lib/tiempoReal.js     cliente graphql-ws del navegador (suscribirse)
+    lib/formato.ts        dinero, fechas y nombres de estados y métodos de pago
+    lib/permisos.ts       secciones del panel y el permiso de cada una
+    lib/tiempoReal.ts     cliente graphql-ws del navegador (suscribirse)
+    lib/agente.ts         cliente del asistente y de las reseñas
+    lib/imagen.ts         URLs del optimizador de imágenes (srcset)
     middleware.ts         llena Astro.locals.user y protege rutas
     styles/               estilos globales y de la app
+agente/                   Asistente con IA y reseñas (Python + FastAPI + MongoDB), ver agente/README.md
+android/                  App Android (Trusted Web Activity) que abre la PWA
+render.yaml               despliegue de los tres servicios en Render
 db.sql                    esquema y datos semilla (idempotente)
 ```
 
@@ -159,9 +177,25 @@ npm run dev
 `web/.env` necesita `GRAPHQL_URL` (por defecto `http://localhost:4000/`) y,
 para el tiempo real, `PUBLIC_GRAPHQL_WS_URL` (por defecto `ws://localhost:4000/graphql`).
 
-**Demo sin Neon ni Stripe:** `cd back && npm run demo` levanta el backend en el
-puerto 4000 con una base temporal y Stripe simulado (OXXO, SPEI y links
-funcionan; tarjeta no). Al cerrarlo se borra todo.
+**3. Agente** (`http://localhost:8000`, opcional), en otra terminal:
+
+```bash
+cd agente
+python -m venv .venv && .venv/Scripts/activate   # en macOS/Linux: source .venv/bin/activate
+pip install -r requirements.txt
+cp .env.example .env    # GEMINI_API_KEY, MONGODB_URI y AGENTE_CLAVE_INTERNA
+uvicorn app.main:app --port 8000
+```
+
+En `web/.env` pon `AGENTE_URL=http://localhost:8000/` y la misma
+`AGENTE_CLAVE_INTERNA`. Sin agente la tienda funciona igual, solo sin Vinny ni reseñas.
+
+**Demo sin Neon ni cuentas:** `cd back && npm run demo` levanta el backend en el
+puerto 4000 con una base temporal, Stripe simulado (OXXO, SPEI y links
+funcionan; tarjeta no) y PayPal, Mercado Libre, Banxico y COPOMEX simulados
+(PayPal abre una página de pago de prueba). `cd agente && python pruebas/servidor_demo.py`
+levanta un agente de demostración sin IA real (siempre busca en el catálogo).
+Al cerrarlos se borra todo.
 
 **Usuarios de prueba** (vienen en `db.sql`):
 
@@ -221,18 +255,39 @@ Levanta un PostgreSQL temporal y el backend con un Stripe simulado (no necesita
 cuenta, internet ni toca Neon). `probar-pagos` recorre los cinco métodos de
 pago, rechazos, vencimientos, reembolsos y webhooks; `probar-backoffice`, los
 roles, catálogo, kárdex, cupones, envíos, reembolsos parciales, clientes,
-contraseñas, correos, bitácora, CSV y las subscriptions por WebSocket.
+contraseñas, correos, bitácora, CSV y las subscriptions por WebSocket;
+`probar-apis`, PayPal, Mercado Libre, Banxico, COPOMEX y el panel de integraciones
+contra APIs simuladas.
+
+```bash
+cd agente
+pip install -r requirements-dev.txt
+pytest          # 16 pruebas: chat, herramientas, permisos, límites y reseñas
+```
+
+```bash
+cd web
+npm run check   # tipos de Astro y TypeScript
+```
 
 ## Producción
 
 ```bash
 cd web
 npm run build
-node dist/server/entry.mjs     # servidor Node standalone
+npm start          # server.mjs: Express + compresión + caché + SSR de Astro
 ```
 
-`web` (adaptador `@astrojs/node`) y `back` pueden desplegarse como dos servicios
-Node (por ejemplo en Render o Railway). En `web` define `GRAPHQL_URL` con la URL
+**Render (recomendado):** `render.yaml` describe los tres servicios (web, backend
+y agente). En Render → New → Blueprint elige el repositorio; pedirá las variables
+secretas (`DATABASE_URL` de Neon, `MONGODB_URI` de MongoDB Atlas, `GEMINI_API_KEY`
+y las llaves de Stripe, PayPal, Mercado Libre, Banxico y COPOMEX). La clave
+interna entre la web y el agente la genera Render. En el plan gratis los servicios
+se duermen tras 15 minutos sin visitas: abre la tienda una vez antes de medir con
+Lighthouse.
+
+`web` (adaptador `@astrojs/node` en modo middleware) y `back` también pueden
+desplegarse como servicios Node en otro proveedor. En `web` define `GRAPHQL_URL` con la URL
 pública del backend y `PUBLIC_GRAPHQL_WS_URL` con `wss://<tu-backend>/graphql`
 (se usa al compilar); en `back`, `DATABASE_URL`, las variables de Stripe,
 `WEB_URL` con la URL pública del frontend, las de SMTP si quieres mandar
@@ -242,6 +297,27 @@ Dashboard de Stripe agrega un webhook hacia `https://<tu-backend>/webhooks/strip
 y usa su secreto en `STRIPE_WEBHOOK_SECRET`. Para cobrar dinero real hay que
 activar la cuenta de Stripe y cambiar las llaves `sk_test_`/`pk_test_` por
 `sk_live_`/`pk_live_`.
+
+## PWA y app de Android
+
+- **PWA:** `web/public/manifest.webmanifest`, íconos en `web/public/iconos/`
+  (se regeneran con `npm run iconos` desde el SVG del disco), service worker
+  `web/public/sw.js` (archivos con hash: primero caché; fotos: caché y se actualiza;
+  páginas: siempre red con `offline.html` de respaldo; nunca guarda checkout,
+  pedidos, perfil, panel ni `/api`).
+- **APK:** `android/` es un proyecto Gradle mínimo (Trusted Web Activity con
+  `androidbrowserhelper`) que abre la tienda publicada a pantalla completa. El
+  dominio se cambia en `android/gradle.properties` (`twaHost`). Para compilar:
+
+  ```bash
+  cd android
+  ./gradlew assembleRelease     # app/build/outputs/apk/release/app-release.apk
+  ```
+
+  La firma usa `android/keystore.properties` y `android/vinylink.keystore`, que
+  **no** se suben al repositorio (guárdalos: sin ellos no se puede actualizar la
+  app). La huella SHA-256 de esa llave va en `web/public/.well-known/assetlinks.json`;
+  si no coincide, la app abre la tienda con barra de direcciones.
 
 ## API GraphQL
 

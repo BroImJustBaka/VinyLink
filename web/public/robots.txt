@@ -1,0 +1,7 @@
+User-agent: *
+Disallow: /admin
+Disallow: /api/
+Disallow: /checkout
+Disallow: /pedido/
+Disallow: /perfil
+Allow: /

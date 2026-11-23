@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Mismos colores que el manifest de la PWA -->
+    <color name="barraEstado">#242321</color>
+    <color name="barraNavegacion">#f3ebdd</color>
+    <color name="fondoSplash">#f3ebdd</color>
+    <color name="fondoIcono">#f3ebdd</color>
+</resources>

@@ -5,10 +5,10 @@
 import Layout from "../layouts/Layout.astro";
 import Sidebar from "../components/catalogo/Sidebar.astro";
 import ProductGrid from "../components/catalogo/ProductGrid.astro";
-import ProductModal from "../components/catalogo/ProductModal.jsx";
+import ProductModal from "../components/catalogo/ProductModal.tsx";
 import ErrorBox from "../components/catalogo/ErrorBox.astro";
 import { graphqlServer } from "../lib/graphql";
-import { QUERY_BUSCAR } from "../lib/queries/catalogo.js";
+import { QUERY_BUSCAR } from "../lib/queries/catalogo.ts";
 
 const q = (Astro.url.searchParams.get("q") ?? "").trim();
 
@@ -64,5 +64,5 @@ if (q) {
     }
   </section>
 
-  <ProductModal client:load />
+  <ProductModal client:load conSesion={!!Astro.locals.user} />
 </Layout>

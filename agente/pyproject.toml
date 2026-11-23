@@ -1,0 +1,11 @@
+[project]
+name = "vinylink-agente"
+version = "1.0.0"
+description = "Asistente de compras con IA (Claude) y reseñas de productos para VinyLink"
+requires-python = ">=3.12"
+
+[tool.pytest.ini_options]
+pythonpath = [".", "pruebas"]
+testpaths = ["pruebas"]
+addopts = "-q"
+filterwarnings = ["ignore::DeprecationWarning:mongomock.*"]

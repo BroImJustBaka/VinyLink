@@ -167,7 +167,7 @@ ALTER TABLE pedido ADD CONSTRAINT pedido_estado_check
   CHECK (estado IN ('pendiente', 'pagado', 'enviado', 'entregado', 'cancelado', 'reembolsado'));
 ALTER TABLE pedido DROP CONSTRAINT IF EXISTS pedido_metodo_pago_check;
 ALTER TABLE pedido ADD CONSTRAINT pedido_metodo_pago_check
-  CHECK (metodo_pago IS NULL OR metodo_pago IN ('credito', 'debito', 'oxxo', 'spei', 'link'));
+  CHECK (metodo_pago IS NULL OR metodo_pago IN ('credito', 'debito', 'oxxo', 'spei', 'link', 'paypal'));
 CREATE INDEX IF NOT EXISTS pedido_usuario_idx ON pedido(usuario_id);
 CREATE INDEX IF NOT EXISTS pedido_estado_idx ON pedido(estado);
 CREATE INDEX IF NOT EXISTS detalle_pedido_pedido_idx ON detalle_pedido(pedido_id);
@@ -182,7 +182,7 @@ CREATE TABLE IF NOT EXISTS pago (
   pedido_id                  INTEGER NOT NULL UNIQUE REFERENCES pedido(id)
     ON DELETE CASCADE ON UPDATE CASCADE,
   metodo                     TEXT NOT NULL
-    CHECK (metodo IN ('credito', 'debito', 'oxxo', 'spei', 'link')),
+    CHECK (metodo IN ('credito', 'debito', 'oxxo', 'spei', 'link', 'paypal')),
   estado                     TEXT NOT NULL DEFAULT 'pendiente'
     CHECK (estado IN ('pendiente', 'requiere_accion', 'pagado', 'fallido', 'cancelado', 'reembolsado')),
   monto_centavos             INTEGER NOT NULL CHECK (monto_centavos > 0),
@@ -489,3 +489,17 @@ BEGIN
 EXCEPTION WHEN OTHERS THEN
   RAISE NOTICE 'pg_trgm no está disponible (%); la búsqueda funcionará sin tolerancia a errores.', SQLERRM;
 END $$;
+
+-- ============================================================
+-- PayPal (segundo proveedor de pagos)
+-- ------------------------------------------------------------
+-- Un pedido pagado con PayPal guarda la orden (Orders v2) y su captura.
+-- Las bases creadas antes de PayPal tienen el CHECK de `metodo` sin
+-- 'paypal': se reemplaza (ya incluye 'paypal' arriba para bases nuevas).
+-- ============================================================
+ALTER TABLE pago DROP CONSTRAINT IF EXISTS pago_metodo_check;
+ALTER TABLE pago ADD CONSTRAINT pago_metodo_check
+  CHECK (metodo IN ('credito', 'debito', 'oxxo', 'spei', 'link', 'paypal'));
+ALTER TABLE pago ADD COLUMN IF NOT EXISTS paypal_order_id TEXT UNIQUE;
+ALTER TABLE pago ADD COLUMN IF NOT EXISTS paypal_capture_id TEXT;
+ALTER TABLE reembolso ADD COLUMN IF NOT EXISTS paypal_reembolso_id TEXT;

@@ -6,9 +6,9 @@
 import Layout from "../../layouts/Layout.astro";
 import AdminNav from "../../components/admin/AdminNav.astro";
 import { graphqlServer } from "../../lib/graphql";
-import { QUERY_ADMIN_CLIENTES, MUTATION_CAMBIAR_ROL } from "../../lib/queries/admin.js";
-import { dinero, fecha } from "../../lib/formato.js";
-import { puede, NOMBRES_ROL } from "../../lib/permisos.js";
+import { QUERY_ADMIN_CLIENTES, MUTATION_CAMBIAR_ROL } from "../../lib/queries/admin.ts";
+import { dinero, fecha } from "../../lib/formato.ts";
+import { puede, NOMBRES_ROL } from "../../lib/permisos.ts";
 
 const yo = Astro.locals.user!;
 const POR_PAGINA = 25;

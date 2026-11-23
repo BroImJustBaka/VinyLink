@@ -20,4 +20,7 @@ interface ImportMetaEnv {
   readonly GRAPHQL_URL?: string;
   // WebSocket de las subscriptions; lo usa el navegador (por eso PUBLIC_).
   readonly PUBLIC_GRAPHQL_WS_URL?: string;
+  // Microservicio del asistente con IA y reseñas (carpeta agente/). Solo servidor.
+  readonly AGENTE_URL?: string;
+  readonly AGENTE_CLAVE_INTERNA?: string;
 }

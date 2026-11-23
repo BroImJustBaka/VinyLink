@@ -5,20 +5,21 @@
 // libreta de direcciones del cliente se piden al backend aquí en el servidor
 // y se le pasan a la isla.
 import Layout from "../layouts/Layout.astro";
-import CheckoutForm from "../components/carrito/CheckoutForm.jsx";
+import CheckoutForm from "../components/carrito/CheckoutForm.tsx";
 import { graphqlServer } from "../lib/graphql";
-import { QUERY_CONFIG_PAGOS, QUERY_MIS_DIRECCIONES } from "../lib/queries/pagos.js";
+import { QUERY_CONFIG_PAGOS, QUERY_MIS_DIRECCIONES } from "../lib/queries/pagos.ts";
+import type { ConfigPagos, DireccionGuardada } from "../lib/tipos.ts";
 
 const user = Astro.locals.user;
 
-let pagos = null;
+let pagos: ConfigPagos | null = null;
 let errorConfig: string | null = null;
 try {
   ({ configPagos: pagos } = await graphqlServer(Astro.cookies, QUERY_CONFIG_PAGOS));
 } catch (err) {
   errorConfig = err instanceof Error ? err.message : String(err);
 }
-let direcciones = [];
+let direcciones: DireccionGuardada[] = [];
 try {
   ({ misDirecciones: direcciones } = await graphqlServer(Astro.cookies, QUERY_MIS_DIRECCIONES));
 } catch {
