@@ -7,7 +7,7 @@ ANA = {"Authorization": "Bearer tok-ana"}
 
 def test_salud_reporta_gemini(cliente_gemini):
     datos = cliente_gemini.get("/salud").json()
-    assert datos["ia"] == "gemini" and datos["modo"] == "ia" and datos["modelo"] == "gemini-flash-latest"
+    assert datos["ia"] == "gemini" and datos["modo"] == "ia" and datos["modelo"] == "gemini-flash-lite-latest"
 
 
 def test_gemini_busca_productos_y_regresa_tarjetas(cliente_gemini):
@@ -23,7 +23,7 @@ def test_gemini_busca_productos_y_regresa_tarjetas(cliente_gemini):
     assert [p["id"] for p in datos["productos"]] == ["1"]
 
     primera, segunda = simulado.peticiones_gemini
-    assert "gemini-flash-latest:generateContent" in primera["ruta"]
+    assert "gemini-flash-lite-latest:generateContent" in primera["ruta"]
     assert primera["llave"] == "llave-gemini-prueba"
     assert "VinyLink" in primera["systemInstruction"]["parts"][0]["text"]
     nombres = {f["name"] for f in primera["tools"][0]["functionDeclarations"]}
@@ -99,15 +99,27 @@ def test_gemini_lento_usa_el_modo_basico(cliente_gemini, monkeypatch):
 
 
 def test_gemini_saturado_usa_el_modelo_de_respaldo(cliente_gemini):
-    simulado.modelos_caidos = {"gemini-flash-latest"}
+    simulado.modelos_caidos = {"gemini-flash-lite-latest"}
     simulado.gemini(gemini_texto("Hola desde el respaldo."))
     r = cliente_gemini.post("/chat", json={"mensaje": "hola"})
     assert r.status_code == 200 and r.json()["modo"] == "ia"
     assert r.json()["respuesta"] == "Hola desde el respaldo."
-    assert "gemini-flash-lite-latest:generateContent" in simulado.peticiones_gemini[-1]["ruta"]
+    assert "gemini-flash-latest:generateContent" in simulado.peticiones_gemini[-1]["ruta"]
 
 
 def test_gemini_y_respaldo_saturados_usan_el_modo_basico(cliente_gemini):
-    simulado.modelos_caidos = {"gemini-flash-latest", "gemini-flash-lite-latest"}
+    simulado.modelos_caidos = {"gemini-flash-lite-latest", "gemini-flash-latest"}
     r = cliente_gemini.post("/chat", json={"mensaje": "earbuds"})
     assert r.status_code == 200 and r.json()["modo"] == "basico"
+
+
+def test_gemini_sin_cuota_se_queda_con_el_respaldo(cliente_gemini):
+    simulado.modelos_caidos = {"gemini-flash-lite-latest"}
+    simulado.gemini(gemini_texto("Uno."), gemini_texto("Dos."))
+    cliente_gemini.post("/chat", json={"mensaje": "hola"})
+    antes = len(simulado.peticiones_gemini)
+    r = cliente_gemini.post("/chat", json={"mensaje": "otra"})
+    assert r.json()["respuesta"] == "Dos."
+    # El segundo mensaje va directo al respaldo, sin volver a probar el principal.
+    nuevas = simulado.peticiones_gemini[antes:]
+    assert len(nuevas) == 1 and "gemini-flash-latest:generateContent" in nuevas[0]["ruta"]

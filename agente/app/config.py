@@ -10,9 +10,9 @@ class Configuracion(BaseSettings):
 
     # --- Gemini (Google AI Studio, plan gratuito) --- tiene prioridad sobre Claude.
     gemini_api_key: str | None = None
-    gemini_modelo: str = "gemini-flash-latest"
-    # Se usa cuando el modelo principal está saturado (503) o no contesta a tiempo.
-    gemini_modelo_respaldo: str = "gemini-flash-lite-latest"
+    gemini_modelo: str = "gemini-flash-lite-latest"
+    # Se usa cuando el principal está saturado (503), sin cuota (429) o no contesta a tiempo.
+    gemini_modelo_respaldo: str = "gemini-flash-latest"
 
     # --- Claude (Anthropic, opcional y prepagado) ---
     # La SDK lee ANTHROPIC_API_KEY sola; aquí solo se usa para saber si existe.

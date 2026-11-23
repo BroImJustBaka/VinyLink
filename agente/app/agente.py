@@ -114,7 +114,9 @@ _NO_CHAT = ("image", "tts", "audio", "live", "embedding", "thinking")
 MENSAJE_RECHAZO = "Perdón, no puedo ayudarte con eso. ¿Te ayudo a encontrar algún disco, audífono o instrumento?"
 
 
-PAUSA_SIN_IA_S = 600  # sin saldo o llave inválida: se reintenta Claude cada 10 minutos
+PAUSA_SIN_IA_S = 600  # sin saldo o llave inválida: se reintenta la IA cada 10 minutos
+# Tras una falla del modelo principal de Gemini se usa el de respaldo durante este tiempo.
+PAUSA_PRINCIPAL_S = 300
 
 _PALABRAS_DOLAR = ("dolar", "usd", "tipo de cambio")
 _PALABRAS_PEDIDO = ("pedido", "orden", "mis compras", "envio", "guia", "paquete", "rastreo")
@@ -180,6 +182,7 @@ class Agente:
         self.modelo_gemini = config().gemini_modelo
         self._modelo_gemini_resuelto = False
         self._pausa_hasta = 0.0
+        self._respaldo_hasta = 0.0
 
     # ------------------------------------------------------------ herramientas
     async def _ejecutar(self, nombre: str, entrada: dict[str, Any], token: str | None, productos: list[dict]) -> Any:
@@ -300,18 +303,26 @@ class Agente:
         return sorted(otros)[-1] if otros else None
 
     async def _llamar_gemini(self, contenidos: list[gtipos.Content], con_herramientas: bool):
+        respaldo = config().gemini_modelo_respaldo
+        if respaldo == self.modelo_gemini:
+            respaldo = None
+        if respaldo and time.monotonic() < self._respaldo_hasta:
+            return await self._llamar_respaldo(contenidos, con_herramientas, respaldo)
         try:
             return await self._llamar_gemini_principal(contenidos, con_herramientas)
         except _GeminiCaido:
-            respaldo = config().gemini_modelo_respaldo
-            if not respaldo or respaldo == self.modelo_gemini:
+            if not respaldo:
                 raise
-            log.warning("%s está saturado: se intenta con %s.", self.modelo_gemini, respaldo)
-            try:
-                return await self._generar_gemini(contenidos, con_herramientas, modelo=respaldo)
-            except (gerrores.ClientError, ErrorAgente) as err:
-                log.error("El modelo de respaldo %s falló: %s", respaldo, err)
-                raise _SinIA(pausa=False) from err
+            log.warning("%s no está disponible: se usa %s por %s s.", self.modelo_gemini, respaldo, PAUSA_PRINCIPAL_S)
+            self._respaldo_hasta = time.monotonic() + PAUSA_PRINCIPAL_S
+            return await self._llamar_respaldo(contenidos, con_herramientas, respaldo)
+
+    async def _llamar_respaldo(self, contenidos: list[gtipos.Content], con_herramientas: bool, respaldo: str):
+        try:
+            return await self._generar_gemini(contenidos, con_herramientas, modelo=respaldo)
+        except (gerrores.ClientError, ErrorAgente) as err:
+            log.error("El modelo de respaldo %s falló: %s", respaldo, err)
+            raise _SinIA(pausa=False) from err
 
     async def _llamar_gemini_principal(self, contenidos: list[gtipos.Content], con_herramientas: bool):
         try:
@@ -355,8 +366,8 @@ class Agente:
                 log.error("Gemini rechazó la llave (%s): se usa el modo básico.", err.code)
                 raise _SinIA(pausa=True) from err
             if err.code == 429:
-                log.warning("Se agotó la cuota gratuita de Gemini por ahora: se usa el modo básico.")
-                raise _SinIA(pausa=False) from err
+                log.warning("Se agotó la cuota gratuita de %s por ahora.", modelo or self.modelo_gemini)
+                raise _GeminiCaido() from err
             if err.code == 404 and not self._modelo_gemini_resuelto:
                 raise
             log.error("Petición inválida a Gemini: %s", err)

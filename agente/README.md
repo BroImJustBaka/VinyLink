@@ -3,7 +3,7 @@
 Microservicio en **Python (FastAPI)** con dos funciones:
 
 1. **Vinny, el asistente de compras con IA.** Usa la API de **Gemini**
-   (Google AI Studio, plan gratuito, modelo `gemini-flash-latest`) con
+   (Google AI Studio, plan gratuito, modelo `gemini-flash-lite-latest`) con
    herramientas (*function calling*). También funciona con Claude (Anthropic)
    si se configura `ANTHROPIC_API_KEY` en lugar de `GEMINI_API_KEY`. Busca en el catálogo
    real, explica productos, convierte precios a dólares con el tipo de cambio
@@ -85,4 +85,4 @@ APIs de Gemini y Claude y el backend GraphQL, y usan MongoDB en memoria
 (`mongomock`). Revisan la forma exacta de las peticiones (modelo, herramientas,
 historial con firmas de pensamiento), los permisos de pedidos, los bloqueos,
 el límite de mensajes, llaves inválidas, cuota agotada y el modo básico, y el
-ciclo completo de reseñas (31 pruebas).
+ciclo completo de reseñas (32 pruebas).
