@@ -11,6 +11,7 @@ que agrega el proxy de la web; sin ella el cliente es anónimo):
   DELETE /productos/{id}/resenas/mia    borra la reseña propia (sesión)
 """
 
+import asyncio
 import logging
 import time
 from collections import defaultdict, deque
@@ -127,7 +128,8 @@ def exigir_sesion(usuario: dict | None) -> dict:
 @app.get("/salud")
 async def salud(request: Request):
     try:
-        await request.app.state.db.command("ping")
+        # Límite corto: el chequeo de salud de Render espera 5 s como máximo.
+        await asyncio.wait_for(request.app.state.db.command("ping"), timeout=2.5)
         mongo = True
     except Exception:
         mongo = False
