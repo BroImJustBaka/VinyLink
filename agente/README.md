@@ -85,4 +85,4 @@ APIs de Gemini y Claude y el backend GraphQL, y usan MongoDB en memoria
 (`mongomock`). Revisan la forma exacta de las peticiones (modelo, herramientas,
 historial con firmas de pensamiento), los permisos de pedidos, los bloqueos,
 el límite de mensajes, llaves inválidas, cuota agotada y el modo básico, y el
-ciclo completo de reseñas (29 pruebas).
+ciclo completo de reseñas (31 pruebas).

@@ -11,6 +11,8 @@ class Configuracion(BaseSettings):
     # --- Gemini (Google AI Studio, plan gratuito) --- tiene prioridad sobre Claude.
     gemini_api_key: str | None = None
     gemini_modelo: str = "gemini-flash-latest"
+    # Se usa cuando el modelo principal está saturado (503) o no contesta a tiempo.
+    gemini_modelo_respaldo: str = "gemini-flash-lite-latest"
 
     # --- Claude (Anthropic, opcional y prepagado) ---
     # La SDK lee ANTHROPIC_API_KEY sola; aquí solo se usa para saber si existe.
@@ -21,7 +23,7 @@ class Configuracion(BaseSettings):
     max_vueltas_herramientas: int = 6
     # Tiempo máximo para que la IA conteste; después se responde en modo básico
     # (la tienda corta la petición a los 90 s).
-    limite_ia_s: float = 40
+    limite_ia_s: float = 70
     max_turnos_conversacion: int = 30
 
     # --- MongoDB (conversaciones del asistente y reseñas) ---

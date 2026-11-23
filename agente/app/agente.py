@@ -145,6 +145,13 @@ class _SinIA(Exception):
         self.pausa = pausa
 
 
+class _GeminiCaido(_SinIA):
+    """El modelo de Gemini está saturado o no contestó a tiempo."""
+
+    def __init__(self):
+        super().__init__(pausa=False)
+
+
 class ErrorAgente(Exception):
     """Error que se le puede mostrar al cliente, con su código HTTP."""
 
@@ -294,6 +301,20 @@ class Agente:
 
     async def _llamar_gemini(self, contenidos: list[gtipos.Content], con_herramientas: bool):
         try:
+            return await self._llamar_gemini_principal(contenidos, con_herramientas)
+        except _GeminiCaido:
+            respaldo = config().gemini_modelo_respaldo
+            if not respaldo or respaldo == self.modelo_gemini:
+                raise
+            log.warning("%s está saturado: se intenta con %s.", self.modelo_gemini, respaldo)
+            try:
+                return await self._generar_gemini(contenidos, con_herramientas, modelo=respaldo)
+            except (gerrores.ClientError, ErrorAgente) as err:
+                log.error("El modelo de respaldo %s falló: %s", respaldo, err)
+                raise _SinIA(pausa=False) from err
+
+    async def _llamar_gemini_principal(self, contenidos: list[gtipos.Content], con_herramientas: bool):
+        try:
             return await self._generar_gemini(contenidos, con_herramientas)
         except gerrores.ClientError as err:
             if err.code != 404 or self._modelo_gemini_resuelto:
@@ -312,10 +333,10 @@ class Agente:
             self.modelo_gemini = nuevo
             return await self._generar_gemini(contenidos, con_herramientas)
 
-    async def _generar_gemini(self, contenidos: list[gtipos.Content], con_herramientas: bool):
+    async def _generar_gemini(self, contenidos: list[gtipos.Content], con_herramientas: bool, modelo: str | None = None):
         try:
             return await self.gemini.aio.models.generate_content(
-                model=self.modelo_gemini,
+                model=modelo or self.modelo_gemini,
                 contents=contenidos,
                 config=gtipos.GenerateContentConfig(
                     system_instruction=SISTEMA,
@@ -341,8 +362,8 @@ class Agente:
             log.error("Petición inválida a Gemini: %s", err)
             raise ErrorAgente("El asistente no pudo procesar el mensaje. Empieza una conversación nueva.", 400) from err
         except (gerrores.APIError, httpx.HTTPError) as err:
-            log.error("Gemini no respondió (%s): se usa el modo básico.", err)
-            raise _SinIA(pausa=False) from err
+            log.error("Gemini (%s) no respondió: %s", modelo or self.modelo_gemini, err)
+            raise _GeminiCaido() from err
 
     async def _con_gemini(self, historial: list[dict], texto: str, token: str | None):
         """Respuesta con Gemini. Regresa (texto, productos, mensajes nuevos, rechazado)."""

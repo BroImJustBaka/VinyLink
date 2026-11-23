@@ -36,6 +36,7 @@ class Simulado:
         self.peticiones_gemini = []
         self.status_gemini = 200
         self.demora_gemini = 0.0
+        self.modelos_caidos = set()
         self.modelos_validos = None  # None = cualquier modelo existe
         self.peticiones_tienda = []
         self.status_claude = 200
@@ -143,6 +144,8 @@ class Manejador(BaseHTTPRequestHandler):
             if simulado.modelos_validos is not None and modelo not in simulado.modelos_validos:
                 return self._json(404, {"error": {"code": 404, "message": f"models/{modelo} is not found", "status": "NOT_FOUND"}})
             time.sleep(simulado.demora_gemini)
+            if self.path.split("/models/")[1].split(":")[0] in simulado.modelos_caidos:
+                return self._json(503, {"error": {"code": 503, "message": "This model is currently experiencing high demand.", "status": "UNAVAILABLE"}})
             if simulado.status_gemini != 200:
                 return self._json(simulado.status_gemini, {"error": {"code": simulado.status_gemini, "message": "API key not valid. Please pass a valid API key." if simulado.status_gemini < 429 else "Resource has been exhausted (e.g. check quota).", "status": "INVALID_ARGUMENT" if simulado.status_gemini < 429 else "RESOURCE_EXHAUSTED"}})
             if not simulado.respuestas_gemini:

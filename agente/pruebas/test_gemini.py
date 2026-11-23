@@ -96,3 +96,18 @@ def test_gemini_lento_usa_el_modo_basico(cliente_gemini, monkeypatch):
     r = cliente_gemini.post("/chat", json={"mensaje": "earbuds"})
     assert r.status_code == 200 and r.json()["modo"] == "basico"
     assert "Earbuds" in r.json()["respuesta"]
+
+
+def test_gemini_saturado_usa_el_modelo_de_respaldo(cliente_gemini):
+    simulado.modelos_caidos = {"gemini-flash-latest"}
+    simulado.gemini(gemini_texto("Hola desde el respaldo."))
+    r = cliente_gemini.post("/chat", json={"mensaje": "hola"})
+    assert r.status_code == 200 and r.json()["modo"] == "ia"
+    assert r.json()["respuesta"] == "Hola desde el respaldo."
+    assert "gemini-flash-lite-latest:generateContent" in simulado.peticiones_gemini[-1]["ruta"]
+
+
+def test_gemini_y_respaldo_saturados_usan_el_modo_basico(cliente_gemini):
+    simulado.modelos_caidos = {"gemini-flash-latest", "gemini-flash-lite-latest"}
+    r = cliente_gemini.post("/chat", json={"mensaje": "earbuds"})
+    assert r.status_code == 200 and r.json()["modo"] == "basico"
