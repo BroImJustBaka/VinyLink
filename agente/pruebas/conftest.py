@@ -13,6 +13,18 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import pytest
 
+
+@pytest.fixture(autouse=True)
+def _sin_env_real(monkeypatch):
+    """Las pruebas no leen agente/.env: con llaves reales cambiaría el proveedor de IA."""
+    from app.config import Configuracion, config
+
+    monkeypatch.setitem(Configuracion.model_config, "env_file", None)
+    config.cache_clear()
+    yield
+    config.cache_clear()
+
+
 PRODUCTOS = [
     {"id": "1", "nombre": "Audífonos Bluetooth", "descripcion": "Inalámbricos", "precio": 899.99, "stock": 25, "imagen": "https://x/1.jpg", "activo": True, "categoria": {"id": "1", "nombre": "Audífonos"}},
     {"id": "2", "nombre": "Audífonos de estudio", "descripcion": "Over-ear", "precio": 1499.0, "stock": 0, "imagen": "https://x/2.jpg", "activo": True, "categoria": {"id": "1", "nombre": "Audífonos"}},
