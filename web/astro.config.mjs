@@ -16,6 +16,18 @@ export default defineConfig({
     mode: 'middleware'
   }),
 
+  // Dominios en los que se confía al armar la URL de cada petición. Sin esto,
+  // detrás del proxy de Render Astro cree estar en http://localhost y rechaza
+  // los formularios POST (login, registro, admin) con "Cross-site POST form
+  // submissions are forbidden", porque el Origin del navegador no coincide.
+  security: {
+    allowedDomains: [
+      { hostname: 'vinylink-7f.onrender.com', protocol: 'https' },
+      { hostname: 'localhost' },
+      { hostname: '127.0.0.1' }
+    ]
+  },
+
   build: {
     // El CSS va dentro del HTML: sin hoja de estilos que bloquee el primer
     // pintado (mejora el LCP en móvil). Comprimido pesa ~7 KB.
